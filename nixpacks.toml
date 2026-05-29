@@ -1,5 +1,5 @@
-[phases.setup]
-nixPkgs = ['python3', 'ffmpeg']
+[providers]
+providers = ["python"]
 
-[phases.install]
-cmds = ['pip install -r requirements.txt']
+[phases.setup]
+nixPkgs = ["...", "ffmpeg"]
