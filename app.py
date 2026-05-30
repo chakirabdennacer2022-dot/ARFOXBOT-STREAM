@@ -43,14 +43,12 @@ user_streams = {}
 def fix_dash_url(url):
     if not url: return None
     
-    # استخدام re للبحث عن video أو scontent وتجاهل أي زيادات بعدها حتى الوصول لـ .xx.fbcdn.net
-    match = re.search(r'(video|scontent).*?(\.xx\.fbcdn\.net)', url)
-    
-    if match:
-        # هنا نأخذ الكلمة الأساسية (video أو scontent) ونلصقها مباشرة في .xx.fbcdn.net
-        # ليتم التخلص من أي شيء مثل (-sjc6-1) نهائياً وحذف كل ما بعد الكلمة
-        fixed_url = f"https://BeOut@{match.group(1)}{match.group(2)}"
-        return fixed_url
+    # تعبير نمطي للبحث عن نطاقات video أو scontent مهما كانت الحروف أو الأرقام الملتصقة بها
+    # مثل video-mrs2-2.xx.fbcdn.net أو scontent-sjc6-1.xx.fbcdn.net واستبدالها بالشكل الخام الصافي
+    if "video" in url and ".fbcdn.net" in url:
+        url = re.sub(r"https?://[^/]*video[^/]*\.fbcdn\.net", "https://BeOut@video.xx.fbcdn.net", url)
+    elif "scontent" in url and ".fbcdn.net" in url:
+        url = re.sub(r"https?://[^/]*scontent[^/]*\.fbcdn\.net", "https://BeOut@scontent.xx.fbcdn.net", url)
         
     return url
 
