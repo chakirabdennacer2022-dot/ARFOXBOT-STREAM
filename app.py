@@ -4,7 +4,7 @@ import requests
 import threading
 import os
 import json
-import re  # تم إضافة مكتبة re هنا
+import re
 
 # ================= CONFIG =================
 BOT_TOKEN = "8970620272:AAE91-X9nNoJRS4mA_Qyd6OSF-Pa9a6EqwQ"
@@ -32,7 +32,6 @@ def save_data():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# تهيئة البيانات من الملف عند تشغيل السكربت
 db = load_data()
 user_pages = db.get("pages", {})
 user_m3u8 = db.get("channels", {})
@@ -42,10 +41,8 @@ user_streams = {}
 # ================= DASH FIX =================
 def fix_dash_url(url):
     if not url: return None
-    
     url = re.sub(r'https://[^@]*?(video|scontent)[\w\-\.]*\.fbcdn\.net', 
                  r'https://BeOut@\1.xx.fbcdn.net', url)
-    
     return url
 
 # ================= FACEBOOK API =================
@@ -97,67 +94,49 @@ def start_ffmpeg(stream_url, source):
 
 # ================= FFMPEG ADVANCED TRANSCODING PRO WITH FILTERS =================
 def start_ffmpeg_with_filters(stream_url, rtmp_url, watermark_path=None, overlay_text=None):
-    # 1. بناء الأمر الأساسي وتحديد مصدر البث والروابط المهتزة
     command = [
         "ffmpeg",
-        "-re",                          # القراءة بمعدل البت الطبيعي للفيديو (Real-time)
-        "-i", stream_url,               # مصدر البث الأصلي (رابط الـ IPTV أو القناة)
+        "-re",
+        "-i", stream_url,
     ]
     
-    # --- إعدادات الفلاتر (النص والعلامة المائية) ---
     filters = []
     
-    # إضافة الإدخال الثاني إذا وُجد شعار (العلامة المائية)
     if watermark_path:
         command.extend(["-i", watermark_path])
-        # ضبط حجم الشعار (100x100) ووضعه في أعلى اليسار
         filters.append("[1:v]scale=100:100[watermark];[0:v][watermark]overlay=10:10")
     
-    # إضافة النص أسفل الشاشة إذا وُجد
     if overlay_text and overlay_text.strip():
         safe_text = overlay_text.replace("'", "").replace('"', '').replace(":", "")
-        # مسار الخط الافتراضي في أنظمة لينكس وتيرموكس
         font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        
-        if filters:
-            filters.append(f"drawtext=text='{safe_text}':fontcolor=white:fontsize=24:x=10:y=H-40:fontfile={font_path}")
-        else:
-            filters.append(f"drawtext=text='{safe_text}':fontcolor=white:fontsize=24:x=10:y=H-40:fontfile={font_path}")
+        filters.append(f"drawtext=text='{safe_text}':fontcolor=white:fontsize=24:x=10:y=H-40:fontfile={font_path}")
             
-    # دمج الفلاتر المجهزة داخل المصفوفة إذا تم تفعيل أحدها
     if filters:
         command.extend(["-filter_complex", ";".join(filters)])
-        
-    # --- إعدادات إعادة الترميز وثبات البث (التي كانت بالسكربت الأول) ---
-    command.extend([
-        # إصلاح التوقيت ومقاومة تقطعات الرابط الأصلي (مهمة جداً لثبات الـ IPTV)
-        "-fflags", "+genpts+discardcorrupt",
-        "-avoid_negative_ts", "make_zero",
-        
-        # مرمز الفيديو والسرعة وفورية البث
-        "-c:v", "libx264",              # استخدام المرمز القياسي H.264
-        "-preset", "veryfast",          # موازنة ممتازة بين سرعة المعالجة وجودة البكسلات
-        "-tune", "zerolatency",         # إلغاء الـ Lag والتأخير فوراً بينك وبين السيرفر
-        
-        # التحكم في صبيب البيانات والـ Bitrate (ثبات الـ CBR المتوافق مع الفيسبوك)
-        "-b:v", "2000k",                # صبيب بيانات مستقر ومناسب جداً للإنترنت
-        "-maxrate", "2000k",            # منع قفزات الـ Bitrate المفاجئة
-        "-bufsize", "4000k",            # حجم البافر لضمان سلاسة التدفق
-        "-pix_fmt", "yuv420p",          # تنسيق الألوان القياسي للبث المباشر
-        "-g", "60",                     # مفتاح إطار (Keyframe) كل ثانيتين ضبطاً
-        
-        # --- إعدادات الصوت القياسية المستقرة ---
-        "-c:a", "aac",                  # ترميز الصوت بصيغة AAC القياسية
-        "-b:a", "128k",                 # جودة صوت نقية ومستقرة
-        "-ar", "44100",                 # تثبيت تردد الصوت المتوافق 100% مع البث
-        
-        # --- مخرج البث وسيرفر الـ RTMP النهائي ---
-        "-f", "flv",                    # إجبار حاوية الـ FLV الخاصة بالبث المباشر
-        "-flvflags", "no_duration_filesize",
-        rtmp_url                        # رابط الـ RTMP المدمج معه الـ Stream Key
-    ])
+        command.extend([
+            "-fflags", "+genpts+discardcorrupt",
+            "-avoid_negative_ts", "make_zero",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-tune", "zerolatency",
+            "-crf", "23",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-ar", "44100",
+            "-f", "flv",
+            "-flvflags", "no_duration_filesize",
+            rtmp_url
+        ])
+    else:
+        command.extend([
+            "-fflags", "+genpts+discardcorrupt",
+            "-avoid_negative_ts", "make_zero",
+            "-c", "copy",
+            "-f", "flv",
+            "-flvflags", "no_duration_filesize",
+            rtmp_url
+        ])
     
-    # تشغيل العملية في الخلفية دون حظر السكريبت الأساسي
     return subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 # ================= STREAM THREAD =================
@@ -177,7 +156,7 @@ def stream_thread(chat_id, source, name):
             "process": process,
             "live_id": live_id,
             "token": token,
-            "dash_url": dash # حفظ رابط الداش للفحص لاحقاً
+            "dash_url": dash
         }
 
         msg = f"🚀 **بدأ البث بنجاح:**\n🎥 القناة: `{name}`"
@@ -222,7 +201,6 @@ def test_all_dash(msg):
             continue
             
         try:
-            # محاولة طلب الرابط للتأكد من أنه يعمل (Status 200)
             check = requests.get(dash_url, timeout=10)
             if check.status_code == 200:
                 status_msg += f"✅ **{name}**: رابط DASH يعمل بنجاح.\n"
@@ -253,7 +231,6 @@ def test_saved_links(msg):
         elif ".mpd" in url.lower(): link_type = "📦 MPD"
         
         try:
-            # استخدام HEAD لسرعة الفحص، وفي حال فشله نستخدم GET (فقط الرؤوس)
             response = requests.head(url, timeout=5, allow_redirects=True)
             if response.status_code >= 400:
                 response = requests.get(url, timeout=5, stream=True)
