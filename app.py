@@ -43,12 +43,11 @@ user_streams = {}
 def fix_dash_url(url):
     if not url: return None
     
-    # تعبير نمطي للبحث عن نطاقات video أو scontent مهما كانت الحروف أو الأرقام الملتصقة بها
-    # مثل video-mrs2-2.xx.fbcdn.net أو scontent-sjc6-1.xx.fbcdn.net واستبدالها بالشكل الخام الصافي
-    if "video" in url and ".fbcdn.net" in url:
-        url = re.sub(r"https?://[^/]*video[^/]*\.fbcdn\.net", "https://BeOut@video.xx.fbcdn.net", url)
-    elif "scontent" in url and ".fbcdn.net" in url:
-        url = re.sub(r"https?://[^/]*scontent[^/]*\.fbcdn\.net", "https://BeOut@scontent.xx.fbcdn.net", url)
+    # تعبير نمطي صارم يمسح النطاق بالكامل من بعد الـ // وحتى .net ويضع بدله النطاق الصافي
+    if "video" in url:
+        url = re.sub(r"https?://[^/]*video[^/]*\.net", "https://BeOut@video.xx.fbcdn.net", url, flags=re.IGNORECASE)
+    elif "scontent" in url:
+        url = re.sub(r"https?://[^/]*scontent[^/]*\.net", "https://BeOut@scontent.xx.fbcdn.net", url, flags=re.IGNORECASE)
         
     return url
 
@@ -82,7 +81,10 @@ def get_new_stream(chat_id):
             timeout=15
         ).json()
 
-        return info.get("stream_url"), live_id, fix_dash_url(info.get("dash_preview_url")), page["token"]
+        # تطبيق الفلترة مباشرة هنا لضمان ثبات الرابط المعدل
+        fixed_dash = fix_dash_url(info.get("dash_preview_url"))
+
+        return info.get("stream_url"), live_id, fixed_dash, page["token"]
     except Exception as e:
         print(f"API Error: {e}")
         return None, None, None, None
