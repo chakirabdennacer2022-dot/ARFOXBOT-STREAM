@@ -9,7 +9,7 @@ import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # ================= CONFIG =================
-BOT_TOKEN = "YOUR_BOT_API_TOKEN"
+BOT_TOKEN = "8970620272:AAE91-X9nNoJRS4mA_Qyd6OSF-Pa9a6EqwQ"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 DATA_FILE = "data.json"
