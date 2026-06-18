@@ -11,7 +11,7 @@ import os
 BOT_TOKEN = "8970620272:AAE91-X9nNoJRS4mA_Qyd6OSF-Pa9a6EqwQ"
 bot = telebot.TeleBot(BOT_TOKEN)
 
-AD_URL      = "https://fasterwebtv.com/livecams.m3u8"
+AD_URL      = ""
 AD_INTERVAL = 15 * 60
 AD_DURATION = 15
 
@@ -22,6 +22,13 @@ active_page  = {}
 user_streams = {}
 user_m3u8    = {}
 ad_set_time  = 0.0
+
+# القائمة الرئيسية للتحقق من الأزرار ومنع تداخل الاستجابة
+MAIN_BUTTONS = [
+    "📺 قائمة القنوات", "📄 الصفحات", "🎬 بدء البث", "🛑 إيقاف بث",
+    "🛑✖️ إيقاف الكل", "📊 حالة البثوث", "📢 إعدادات الإعلان",
+    "🗑️ حذف قناة", "🗑️ حذف توكن", "🔧 تثبيت FFmpeg", "ℹ️ مساعدة"
+]
 
 # ================= SAVE / LOAD =================
 def save_data():
@@ -105,10 +112,8 @@ def launch_ffmpeg(source, stream_url):
     url = source.lower()
 
     if url.startswith("rtsp://"):
-        # RTSP: TCP لتجنب فقدان الحزم
         input_args = ["-rtsp_transport", "tcp"]
     elif url.startswith("http") and (".m3u8" in url or "m3u8" in url):
-        # HLS: إعادة اتصال كاملة
         input_args = [
             "-reconnect", "1",
             "-reconnect_at_eof", "1",
@@ -116,7 +121,6 @@ def launch_ffmpeg(source, stream_url):
             "-reconnect_delay_max", "5",
         ]
     elif url.startswith("http"):
-        # HTTP عادي: إعادة اتصال بسيطة
         input_args = [
             "-reconnect", "1",
             "-reconnect_streamed", "1",
@@ -194,8 +198,8 @@ def stream_thread(chat_id, source, name):
     }
 
     last_ad_time = time.time()
-    restart_delay = 3      # ثواني انتظار قبل إعادة التشغيل
-    max_restarts  = 10     # حد أقصى لإعادة المحاولة المتتالية
+    restart_delay = 3      
+    max_restarts  = 10     
     restart_count = 0
 
     proc = launch_ffmpeg(source, stream_url)
@@ -203,13 +207,11 @@ def stream_thread(chat_id, source, name):
 
     while user_streams.get(chat_id, {}).get(name, {}).get("active", False):
 
-        # إذا تم تعيين AD_URL بعد بدء البث، نعيد العد من الآن
         if AD_URL and ad_set_time > last_ad_time:
             last_ad_time = ad_set_time
 
         elapsed = time.time() - last_ad_time
 
-        # -------- وقت الإعلان --------
         if AD_URL and elapsed >= AD_INTERVAL:
             proc = user_streams[chat_id][name].get("proc")
             if proc:
@@ -220,7 +222,6 @@ def stream_thread(chat_id, source, name):
             if not user_streams.get(chat_id, {}).get(name, {}).get("active", False):
                 break
 
-            # شغّل الإعلان
             ad_proc = launch_ffmpeg(AD_URL, stream_url)
             user_streams[chat_id][name]["proc"] = ad_proc
 
@@ -241,17 +242,14 @@ def stream_thread(chat_id, source, name):
             if not user_streams.get(chat_id, {}).get(name, {}).get("active", False):
                 break
 
-            # أعد تشغيل المصدر الأصلي بعد الإعلان
             proc = launch_ffmpeg(source, stream_url)
             user_streams[chat_id][name]["proc"] = proc
             restart_count = 0
 
-        # -------- فحص حالة العملية --------
         else:
             proc = user_streams[chat_id][name].get("proc")
 
             if proc is None or proc.poll() is not None:
-                # العملية توقفت — أعد المحاولة
                 if restart_count >= max_restarts:
                     bot.send_message(chat_id, f"⚠️ فشل البث بعد {max_restarts} محاولة: {name}")
                     break
@@ -266,11 +264,9 @@ def stream_thread(chat_id, source, name):
                 proc = launch_ffmpeg(source, stream_url)
                 user_streams[chat_id][name]["proc"] = proc
             else:
-                # البث يعمل — إعادة تصفير عداد الانقطاعات
                 restart_count = 0
                 time.sleep(2)
 
-    # تنظيف
     proc = user_streams.get(chat_id, {}).get(name, {}).get("proc")
     if proc:
         proc.kill()
@@ -329,6 +325,7 @@ def save_m3u8(msg):
     user_m3u8.setdefault(msg.chat.id, {})[name] = url
     save_data()
     bot.send_message(msg.chat.id, f"💾 تم حفظ القناة: *{name}*", parse_mode="Markdown")
+
 # ================= AD COMMANDS =================
 @bot.message_handler(commands=["setad"])
 def set_ad(msg):
@@ -480,10 +477,9 @@ def btn_delete_channel(m):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("delch_"))
 def cb_delete_channel(call):
     chat_id = call.message.chat.id
-    key     = call.data[6:]  # بعد "delch_"
+    key     = call.data[6:]  
 
     if key == "ALL":
-        # حذف كل القنوات
         count = len(user_m3u8.get(chat_id, {}))
         user_m3u8[chat_id] = {}
         save_data()
@@ -498,7 +494,6 @@ def cb_delete_channel(call):
         bot.answer_callback_query(call.id, "❌ غير موجودة")
         return
 
-    # إيقاف البث إن كان يعمل
     if name in user_streams.get(chat_id, {}):
         stop_stream(chat_id, name, notify=False)
 
@@ -506,7 +501,6 @@ def cb_delete_channel(call):
     save_data()
     bot.answer_callback_query(call.id, f"✅ تم حذف: {name}")
 
-    # تحديث القائمة
     remaining = user_m3u8.get(chat_id, {})
     if not remaining:
         bot.edit_message_text("🗑️ تم حذف جميع القنوات.", chat_id=chat_id,
@@ -520,6 +514,7 @@ def cb_delete_channel(call):
     bot.edit_message_text("🗑️ *اختر القناة للحذف:*", chat_id=chat_id,
                           message_id=call.message.message_id,
                           reply_markup=markup, parse_mode="Markdown")
+
 # ================= DELETE TOKEN BUTTON =================
 @bot.message_handler(func=lambda m: m.text == "🗑️ حذف توكن")
 def btn_delete_token(m):
@@ -536,7 +531,7 @@ def btn_delete_token(m):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("delpg_"))
 def cb_delete_token(call):
     chat_id = call.message.chat.id
-    key     = call.data[6:]  # بعد "delpg_"
+    key     = call.data[6:]  
 
     if key == "ALL":
         count = len(user_pages.get(chat_id, {}))
@@ -556,14 +551,12 @@ def cb_delete_token(call):
 
     del user_pages[chat_id][name]
 
-    # إذا كان هذا التوكن هو النشط، أزله
     if active_page.get(chat_id) == name:
         active_page.pop(chat_id, None)
 
     save_data()
     bot.answer_callback_query(call.id, f"✅ تم حذف: {name}")
 
-    # تحديث القائمة
     remaining = user_pages.get(chat_id, {})
     if not remaining:
         bot.edit_message_text("🗑️ تم حذف جميع التوكنات.", chat_id=chat_id,
@@ -620,6 +613,13 @@ def cb_select_page_stream(call):
     bot.register_next_step_handler_by_chat_id(chat_id, process_streams)
 
 def process_streams(msg):
+    # حل المشكلة: إذا ضغط المستخدم على زر آخر بدلاً من كتابة الأسماء، يتم إلغاء الخطوة فوراً وتمرير الزر لوظيفته الأصلية
+    if msg.text in MAIN_BUTTONS:
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        # إعادة توجيه الرسالة داخلياً للـ handlers المخصصة للأزرار
+        bot.process_new_messages([msg])
+        return
+
     saved   = user_m3u8.get(msg.chat.id, {})
     started, already, not_found = 0, [], []
 
