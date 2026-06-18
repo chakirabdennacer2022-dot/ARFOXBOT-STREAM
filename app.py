@@ -23,13 +23,6 @@ user_streams = {}
 user_m3u8    = {}
 ad_set_time  = 0.0
 
-# القائمة الرئيسية للتحقق من الأزرار ومنع تداخل الاستجابة
-MAIN_BUTTONS = [
-    "📺 قائمة القنوات", "📄 الصفحات", "🎬 بدء البث", "🛑 إيقاف بث",
-    "🛑✖️ إيقاف الكل", "📊 حالة البثوث", "📢 إعدادات الإعلان",
-    "🗑️ حذف قناة", "🗑️ حذف توكن", "🔧 تثبيت FFmpeg", "ℹ️ مساعدة"
-]
-
 # ================= SAVE / LOAD =================
 def save_data():
     try:
@@ -613,13 +606,57 @@ def cb_select_page_stream(call):
     bot.register_next_step_handler_by_chat_id(chat_id, process_streams)
 
 def process_streams(msg):
-    # حل المشكلة: إذا ضغط المستخدم على زر آخر بدلاً من كتابة الأسماء، يتم إلغاء الخطوة فوراً وتمرير الزر لوظيفته الأصلية
-    if msg.text in MAIN_BUTTONS:
+    # الحل الجذري والنهائي هنا:
+    # نقوم بفحص الرسالة المستقبلة، إذا كانت عبارة عن ضغطة على زر آخر من القائمة،
+    # نقوم بإلغاء خطوة الانتظار الحالية فوراً، ثم نوجه الكود يدوياً لتنفيذ الدالة الخاصة بالزر المضغوط.
+    btn_text = msg.text
+    
+    if btn_text == "📺 قائمة القنوات":
         bot.clear_step_handler_by_chat_id(msg.chat.id)
-        # إعادة توجيه الرسالة داخلياً للـ handlers المخصصة للأزرار
-        bot.process_new_messages([msg])
+        btn_channels(msg)
+        return
+    elif btn_text == "📄 الصفحات":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_pages(msg)
+        return
+    elif btn_text == "🎬 بدء البث":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_start_stream(msg)
+        return
+    elif btn_text == "🛑 إيقاف بث":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_stop(msg)
+        return
+    elif btn_text == "🛑✖️ إيقاف الكل":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_stopall(msg)
+        return
+    elif btn_text == "📊 حالة البثوث":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_status(msg)
+        return
+    elif btn_text == "📢 إعدادات الإعلان":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_ad_settings(msg)
+        return
+    elif btn_text == "🗑️ حذف قناة":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_delete_channel(msg)
+        return
+    elif btn_text == "🗑️ حذف توكن":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_delete_token(msg)
+        return
+    elif btn_text == "🔧 تثبيت FFmpeg":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_install_ffmpeg(msg)
+        return
+    elif btn_text == "ℹ️ مساعدة":
+        bot.clear_step_handler_by_chat_id(msg.chat.id)
+        btn_help(msg)
         return
 
+    # إذا لم يكن نصاً لزر آخر، يستمر في تنفيذ مهام تشغيل البث كالمعتاد تماماً وبدون تعديل
     saved   = user_m3u8.get(msg.chat.id, {})
     started, already, not_found = 0, [], []
 
