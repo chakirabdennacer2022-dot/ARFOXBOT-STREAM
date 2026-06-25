@@ -43,17 +43,19 @@ active_page = {}
 user_streams = {}
 user_waiting_count = {} # لتخزين بيانات القنوات التي تنتظر تحديد عدد التكرار
 
-# ================= REGEX DASH FIX (EXOPLAYER COMPATIBLE) =================
+# ================= REGEX DASH FIX =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    # استخراج السيرفر الحقيقي للفيديو لضمان التوافق الكامل مع ExoPlayer وبدون 404
     match = re.search(r"https://([^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net)/", url)
     if match:
-        original_domain = match.group(1)
-        # دمج ثغرة الفابور مع الدومين الأصلي بطريقة يقبلها ExoPlayer تلقائياً
-        replacement = f"https://free.facebook.com@{original_domain}/"
+        domain = match.group(1)
+        if "video" in domain:
+            replacement = "https://BeOut@video.xx.fbcdn.net/"
+        else:
+            replacement = "https://BeOut@scontent.xx.fbcdn.net/"
+        
         return re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", replacement, url)
     return url
 
@@ -94,17 +96,28 @@ def get_new_stream(chat_id):
     except:
         return None, None, None, None
 
-# ================= FFMPEG ENGINE =================
+# ================= FFMPEG ENGINE (OPTIMIZED FOR WEAK NETWORK) =================
 def launch_ffmpeg(source, stream_url):
     return subprocess.Popen([
         "ffmpeg", "-re",
+        # إعدادات متقدمة لإدخال وإعادة اتصال قوي مع الشبكات الضعيفة
         "-reconnect", "1",
         "-reconnect_at_eof", "1",
         "-reconnect_streamed", "1",
-        "-reconnect_delay_max", "1",
+        "-reconnect_delay_max", "5",       # زيادة مهلة التكيف عند قطع الاتصال لمنع الانهيار المفاجئ
+        "-rw_timeout", "10000000",         # مهلة قراءة وكتابة ممتدة (10 ثوانٍ) لمنع التجمد
+        "-fflags", "+genpts+async",        # توليد الوقت التزامني تلقائياً لحفظ جودة البث عند التقطيع
+        "-analyzeduration", "5000000",     # تحليل أفضل ومستقر للتدفق
+        "-probesize", "5000000",
+        
         "-i", source,
+        
+        # إعدادات الخرج لضمان الاستقرار أثناء الرفع لسيرفر فيسبوك RTMP
         "-c", "copy",
         "-f", "flv",
+        "-flvflags", "no_duration_filesize",
+        "-rtmp_live", "live",              # إجبار السيرفر على اعتبار التدفق كبث حي مستمر
+        "-rtmp_buffer", "4000",            # زيادة الـ Buffer الخاص بالرفع لـ 4 ثوانٍ لتفادي ضعف الرابط
         stream_url
     ], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
 
