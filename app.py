@@ -40,6 +40,7 @@ user_m3u8 = data_store.get("channels", {})
 # متغيرات الجلسة المؤقتة
 active_page = {}
 user_streams = {}
+pending_streams = {}  # لتخزين القنوات المؤقتة التي تنتظر تحديد عدد التكرارات
 
 # ================= REGEX DASH FIX =================
 def fix_dash_url(url):
@@ -94,17 +95,23 @@ def get_new_stream(chat_id):
     except:
         return None, None, None, None
 
-# ================= FFMPEG ENGINE =================
+# ================= FFMPEG ENGINE (UPDATED FOR MAXIMUM COMPATIBILITY) =================
 def launch_ffmpeg(source, stream_url):
+    # إعدادات متقدمة لـ FFMPEG لضمان قراءة وتشغيل جميع أنواع الروابط (M3U8, MPD, direct stream) 
+    # دون التأثير على جودة الفيديو الأصلية (copy) مع توفير حماية ضد تقطيع السيرفرات.
     return subprocess.Popen([
         "ffmpeg", "-re",
-        # إضافة أوامر Reconnect ليعمل بشكل شرس مع تقطعات الشبكة
+        "-tls_verify", "0",                          # تخطي فحص الأمان لبعض الروابط المحمية بشهادات غير مدعومة
+        "-headers", "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\r\n", # تجاوز حظر السيرفرات
+        "-analyzeduration", "2147483647",            # زيادة وقت تحليل الرابط لتفادي مشاكل صيغ الـ Stream المعقدة
+        "-probesize", "2147483647",                  # زيادة حجم الفحص للتعرف على كوديك الفيديو والصوت بسرعة
         "-reconnect", "1",
         "-reconnect_at_eof", "1",
         "-reconnect_streamed", "1",
-        "-reconnect_delay_max", "1",
+        "-reconnect_delay_max", "5",                 # رفع مهلة إعادة الاتصال القصوى لمنع انهيار الجلسة عند تذبذب النت
         "-i", source,
-        "-c", "copy",
+        "-c:v", "copy",                              # نسخ كوديك الفيديو الأصلي بالكامل بدون تعديل
+        "-c:a", "copy",                              # نسخ كوديك الصوت الأصلي بالكامل بدون تعديل
         "-f", "flv",
         stream_url
     ], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
@@ -113,7 +120,7 @@ def launch_ffmpeg(source, stream_url):
 def stream_thread(chat_id, source, name):
     stream_url, live_id, dash, token = get_new_stream(chat_id)
     if not stream_url:
-        bot.send_message(chat_id, "❌ فشل إنشاء البث.")
+        bot.send_message(chat_id, f"❌ فشل إنشاء البث لـ {name}.")
         return
 
     user_streams.setdefault(chat_id, {})[name] = {
@@ -151,11 +158,11 @@ def stream_thread(chat_id, source, name):
             user_streams[chat_id][name]["proc"] = proc
 
         if proc.poll() is not None:
-            time.sleep(0.33) # تم تقليلها لتجرب إعادة التشغيل 3 مرات في الثانية
+            time.sleep(0.33)
             proc = launch_ffmpeg(source, stream_url)
             user_streams[chat_id][name]["proc"] = proc
             
-        time.sleep(0.33) # دورة الفحص تعمل الآن 3 مرات في الثانية بدلاً من ثانية واحدة
+        time.sleep(0.33)
 
     proc = user_streams.get(chat_id, {}).get(name, {}).get("proc")
     if proc:
@@ -351,8 +358,8 @@ def handle_txt(msg):
     
     str_chat_id = str(msg.chat.id)
     user_m3u8.setdefault(str_chat_id, {})
-    count = 0
     
+    imported_channels = []
     for line in content.splitlines():
         line = line.strip()
         if not line:
@@ -361,12 +368,21 @@ def handle_txt(msg):
             name, url = line.split(maxsplit=1)
             if url.startswith("http"):
                 user_m3u8[str_chat_id][name] = url
-                count += 1
+                imported_channels.append(name)
         except:
             pass
             
     save_data()
-    bot.send_message(msg.chat.id, f"💾 تم استيراد {count} قناة بنجاح..")
+    bot.send_message(msg.chat.id, f"💾 تم استيراد {len(imported_channels)} قناة بنجاح..")
+    
+    # بعد الاستيراد بنجاح، يسأل المستخدم مباشرة كم بثاً يريد لهذه القنوات المستوردة
+    if imported_channels:
+        if str_chat_id not in active_page:
+            bot.send_message(msg.chat.id, "⚠️ اختر صفحة أولاً باستخدام /usepage لبدء البث.")
+            return
+        pending_streams[str_chat_id] = imported_channels
+        msg_ask = bot.send_message(msg.chat.id, "🔢 كم من بث تريد في كل قناة؟ (أرسل الرقم فقط، مثال: 5)")
+        bot.register_next_step_handler(msg_ask, process_count_step)
 
 # ================= TEXT MESSAGE GENERAL RECEIVER =================
 @bot.message_handler(func=lambda m: True)
@@ -377,7 +393,7 @@ def start_by_name(msg):
         return
 
     saved = user_m3u8.get(str_chat_id, {})
-    started = 0
+    channels_to_start = []
     not_found = False
 
     for name in msg.text.splitlines():
@@ -385,20 +401,61 @@ def start_by_name(msg):
         if not name:
             continue
         if name in saved:
-            if name in user_streams.get(str_chat_id, {}):
-                bot.send_message(msg.chat.id, f"⚠️ البث '{name}' قيد التشغيل بالفعل.")
-                continue
-            threading.Thread(
-                target=stream_thread,
-                args=(str_chat_id, saved[name], name),
-                daemon=True
-            ).start()
-            started += 1
+            channels_to_start.append(name)
         else:
             not_found = True
 
-    if started == 0 and not_found:
+    if not channels_to_start and not_found:
         bot.send_message(msg.chat.id, "❌ لم يتم العثور على اسم قناة مطابق.")
+        return
+
+    if channels_to_start:
+        pending_streams[str_chat_id] = channels_to_start
+        msg_ask = bot.send_message(msg.chat.id, "🔢 كم من بث تريد في كل قناة؟ (أرسل الرقم فقط، مثال: 5)")
+        bot.register_next_step_handler(msg_ask, process_count_step)
+
+# ================= MULTI-STREAM PROCESSOR =================
+def process_count_step(msg):
+    str_chat_id = str(msg.chat.id)
+    try:
+        count = int(msg.text.strip())
+        if count <= 0:
+            raise ValueError
+    except ValueError:
+        bot.send_message(msg.chat.id, "❌ يرجى إدخال رقم صحيح أكبر من 0.")
+        return
+
+    channels = pending_streams.get(str_chat_id, [])
+    if not channels:
+        bot.send_message(msg.chat.id, "❌ حدث خطأ، يرجى إعادة إرسال أسماء القنوات.")
+        return
+
+    saved = user_m3u8.get(str_chat_id, {})
+    started_count = 0
+
+    for name in channels:
+        if name in saved:
+            source_url = saved[name]
+            for i in range(1, count + 1):
+                # توليد اسم فريد لكل خط بث منعاً للتداخل بالرام وببيانات الـ DASH
+                stream_loop_name = f"{name}_{i}"
+                
+                if stream_loop_name in user_streams.get(str_chat_id, {}):
+                    bot.send_message(msg.chat.id, f"⚠️ البث '{stream_loop_name}' قيد التشغيل بالفعل.")
+                    continue
+                
+                threading.Thread(
+                    target=stream_thread,
+                    args=(str_chat_id, source_url, stream_loop_name),
+                    daemon=True
+                ).start()
+                started_count += 1
+                time.sleep(0.5) # تأخير بسيط لتجنب ضغط الطلبات المتتالية على الفيس بوك API
+
+    bot.send_message(msg.chat.id, f"🚀 جاري إطلاق {started_count} بث بالتوازي... ستصلك روابط DASH تباعاً.")
+    # تنظيف الذاكرة المؤقتة للطلب
+    if str_chat_id in pending_streams:
+        del pending_streams[str_chat_id]
 
 # ================= KEEP-ALIVE SERVER (FOR FREE HOSTING) =================
 class RequestHandler(BaseHTTPRequestHandler):
