@@ -320,6 +320,11 @@ def test_all_dash(msg):
     
     report = "🧪 فحص روابط DASH للبثوث النشطة:\n\n"
     
+    # استخدام متصفح وهمي ثابت لمنع الحظر ودقة الفحص
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    }
+    
     for name, info in streams.items():
         dash_url = info.get("dash_url")
         start_time = info.get("start_time", time.time())
@@ -330,18 +335,21 @@ def test_all_dash(msg):
         minutes, seconds = divmod(remainder, 60)
         time_str = f"{hours}:{minutes:02d}:{seconds:02d}"
         
-        # تحديد حالة البث بالألوان المطلوبة
+        # تحديد حالة البث بالألوان المطلوبة بدقة عالية جداً
         if info.get("restarting", False):
-            status_emoji = "🟠" # جاري إعادة تشغيل رابط DASH
+            status_emoji = "🟠"
         elif not dash_url:
             status_emoji = "🔴"
         else:
             try:
-                res = requests.get(dash_url, timeout=5)
-                if res.status_code == 200:
-                    status_emoji = "🟢" # رابط DASH شغال
+                # الفحص بطلب الحجم الصغير أو التحقق من الكود الفعلي للرابط
+                res = requests.get(dash_url, headers=headers, timeout=5, stream=True)
+                # فيسبوك يعود أحياناً بـ 200 أو 206 عند قراءة البث، كلاهما يعني شغال بنجاح
+                if res.status_code in [200, 206]:
+                    status_emoji = "🟢"
                 else:
-                    status_emoji = "🔴" # رابط DASH غير شغال
+                    status_emoji = "🔴"
+                res.close()
             except:
                 status_emoji = "🔴"
                 
@@ -360,6 +368,10 @@ def test_m3u8_channels(msg):
     status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة...")
     report = "🧪 تقرير فحص القنوات المحفوظة:\n\n"
     
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    }
+    
     for name, url in channels.items():
         if ".m3u8" in url.lower():
             link_type = "M3U8"
@@ -369,11 +381,13 @@ def test_m3u8_channels(msg):
             link_type = "URL"
             
         try:
-            res = requests.head(url, timeout=5, allow_redirects=True)
+            # تم تحويل الفحص إلى طلب GET خفيف وجلب الـ stream لتجنب حظر الـ HEAD وظهور النتائج بشكل سليم ودقيق دائماً
+            res = requests.get(url, headers=headers, timeout=5, allow_redirects=True, stream=True)
             if res.status_code >= 200 and res.status_code < 400:
                 status_emoji = "🟢 شغال ✅"
             else:
                 status_emoji = f"🔴 خطأ ({res.status_code}) ❌"
+            res.close()
         except:
             status_emoji = "🔴 غير مستجيب ❌"
             
@@ -501,7 +515,7 @@ def process_text_or_count(msg):
         try:
             count = int(text)
             if count <= 0:
-                bot.send_message(msg.chat.id, "⚠️ الرجاء إدخل رقم أكبر من الصفر.", reply_markup=get_main_keyboard())
+                bot.send_message(msg.chat.id, "⚠️ الرجاء إدخال رقم أكبر من الصفر.", reply_markup=get_main_keyboard())
                 return
         except ValueError:
             bot.send_message(msg.chat.id, "⚠️ الرجاء إرسال رقم صحيح فقط.", reply_markup=get_main_keyboard())
