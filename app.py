@@ -60,6 +60,15 @@ def get_main_keyboard():
     markup.add(btn_del_channels, btn_del_tokens)
     return markup
 
+# لوحة الأزرار الرقمية المقتبسة من الصورة
+def get_numeric_inline_keyboard():
+    markup = types.InlineKeyboardMarkup(row_width=5)
+    row1 = [types.InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 6)]
+    row2 = [types.InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(6, 11)]
+    markup.row(*row1)
+    markup.row(*row2)
+    return markup
+
 # ================= REGEX DASH FIX =================
 def fix_dash_url(url):
     if not url:
@@ -120,7 +129,8 @@ def launch_ffmpeg(source, stream_url):
         "-reconnect", "1",
         "-reconnect_at_eof", "1",
         "-reconnect_streamed", "1",
-        "-reconnect_delay_max", "1",
+        "-reconnect_delay_max", "5",
+        "-fflags", "+genpts+discardcorrupt",
         "-i", source,
         "-c", "copy",
         "-f", "flv",
@@ -134,7 +144,6 @@ def stream_thread(chat_id, source, name):
         bot.send_message(chat_id, f"❌ فشل إنشاء البث للقناة {name}.", reply_markup=get_main_keyboard())
         return
 
-    # حفظ وقت البداية لحساب المدة الزمنية المستغرقة للبث بدقة
     start_time = time.time()
 
     user_streams.setdefault(chat_id, {})[name] = {
@@ -171,6 +180,13 @@ def stream_thread(chat_id, source, name):
 
         if proc is None or proc.poll() is not None:
             user_streams[chat_id][name]["restarting"] = True
+            
+            new_stream_url, new_live_id, new_dash, _ = get_new_stream(chat_id)
+            if new_stream_url:
+                stream_url = new_stream_url
+                user_streams[chat_id][name]["live_id"] = new_live_id
+                user_streams[chat_id][name]["dash_url"] = new_dash
+
             proc = launch_ffmpeg(source, stream_url)
             user_streams[chat_id][name]["proc"] = proc
             user_streams[chat_id][name]["restarting"] = False
@@ -178,6 +194,13 @@ def stream_thread(chat_id, source, name):
         if proc.poll() is not None:
             time.sleep(0.33)
             user_streams[chat_id][name]["restarting"] = True
+            
+            new_stream_url, new_live_id, new_dash, _ = get_new_stream(chat_id)
+            if new_stream_url:
+                stream_url = new_stream_url
+                user_streams[chat_id][name]["live_id"] = new_live_id
+                user_streams[chat_id][name]["dash_url"] = new_dash
+
             proc = launch_ffmpeg(source, stream_url)
             user_streams[chat_id][name]["proc"] = proc
             user_streams[chat_id][name]["restarting"] = False
@@ -209,6 +232,34 @@ def stop_stream(chat_id, name):
 
     if name in user_streams.get(chat_id, {}):
         del user_streams[chat_id][name]
+
+# ================= ACTION EXECUTION FOR MULTI-STREAM =================
+def execute_multi_stream(chat_id, count):
+    channels = user_waiting_count[chat_id]["channels"]
+    saved = user_m3u8.get(chat_id, {})
+    started_total = 0
+    
+    for name in channels:
+        if name in saved:
+            source_url = saved[name]
+            for i in range(1, count + 1):
+                unique_name = f"{name} Line {i}"
+                
+                if unique_name in user_streams.get(chat_id, {}):
+                    bot.send_message(chat_id, f"⚠️ البث '{unique_name}' قيد التشغيل بالفعل.", reply_markup=get_main_keyboard())
+                    continue
+                    
+                threading.Thread(
+                    target=stream_thread,
+                    args=(chat_id, source_url, unique_name),
+                    daemon=True
+                ).start()
+                started_total += 1
+                time.sleep(0.5)
+                
+    bot.send_message(chat_id, f"✅ جاري إطلاق {started_total} بث متعدد متوازي بنجاح.", reply_markup=get_main_keyboard())
+    if chat_id in user_waiting_count:
+        del user_waiting_count[chat_id]
 
 # ================= COMMANDS & BUTTONS HANDLERS =================
 
@@ -320,7 +371,6 @@ def test_all_dash(msg):
     
     report = "🧪 فحص روابط DASH للبثوث النشطة:\n\n"
     
-    # استخدام متصفح وهمي ثابت لمنع الحظر ودقة الفحص
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
@@ -329,22 +379,18 @@ def test_all_dash(msg):
         dash_url = info.get("dash_url")
         start_time = info.get("start_time", time.time())
         
-        # حساب مدة البث بصيغة H:MM:SS
         elapsed_seconds = int(time.time() - start_time)
         hours, remainder = divmod(elapsed_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         time_str = f"{hours}:{minutes:02d}:{seconds:02d}"
         
-        # تحديد حالة البث بالألوان المطلوبة بدقة عالية جداً
         if info.get("restarting", False):
             status_emoji = "🟠"
         elif not dash_url:
             status_emoji = "🔴"
         else:
             try:
-                # الفحص بطلب الحجم الصغير أو التحقق من الكود الفعلي للرابط
                 res = requests.get(dash_url, headers=headers, timeout=5, stream=True)
-                # فيسبوك يعود أحياناً بـ 200 أو 206 عند قراءة البث، كلاهما يعني شغال بنجاح
                 if res.status_code in [200, 206]:
                     status_emoji = "🟢"
                 else:
@@ -381,7 +427,6 @@ def test_m3u8_channels(msg):
             link_type = "URL"
             
         try:
-            # تم تحويل الفحص إلى طلب GET خفيف وجلب الـ stream لتجنب حظر الـ HEAD وظهور النتائج بشكل سليم ودقيق دائماً
             res = requests.get(url, headers=headers, timeout=5, allow_redirects=True, stream=True)
             if res.status_code >= 200 and res.status_code < 400:
                 status_emoji = "🟢 شغال ✅"
@@ -443,9 +488,25 @@ def show_stream_options(chat_id, channel_names):
     channels_str = ", ".join(channel_names)
     bot.send_message(chat_id, f"📋 تم اختيار القنوات: \n◀️ {channels_str}\n\nاختر نوع البث المطلوب:", reply_markup=markup)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("mode_"))
-def handle_mode_selection(call):
+@bot.callback_query_handler(func=lambda call: call.data.startswith("mode_") or call.data.startswith("num_"))
+def handle_callback_queries(call):
     chat_id = str(call.message.chat.id)
+    
+    # التعامل مع نقرات لوحة الأرقام الإنلاين المضافة حديثاً
+    if call.data.startswith("num_"):
+        if chat_id not in user_waiting_count or "channels" not in user_waiting_count[chat_id]:
+            bot.send_message(chat_id, "❌ حدث خطأ في الجلسة، يرجى إعادة إرسال القناة.", reply_markup=get_main_keyboard())
+            return
+        
+        count = int(call.data.split("_")[1])
+        # إزالة رسالة الأزرار منعاً للتكرار العشوائي بالضغط المتعدد
+        try:
+            bot.delete_message(chat_id, call.message.message_id)
+        except:
+            pass
+        execute_multi_stream(chat_id, count)
+        return
+
     data_split = call.data.split("_")
     mode = data_split[1]
     
@@ -475,7 +536,8 @@ def handle_mode_selection(call):
         
     elif mode == "multi":
         user_waiting_count[chat_id]["awaiting_num"] = True
-        bot.send_message(chat_id, f"🔢 كم من بث تريد في كل قناة؟ \n(أرسل رقم فقط، مثال: 5)", reply_markup=get_main_keyboard())
+        # تعديل النص وحذف التوجيه القديم، مع إرفاق لوحة المفاتيح الرقمية المتطابقة مع الصورة
+        bot.send_message(chat_id, "🚀 كم عدد البثوث المتزامنة التي تريد تشغيلها؟\n(يمكنك اختيار عدد أو كتابة رقم يصل إلى 20)", reply_markup=get_numeric_inline_keyboard())
 
 # ================= TEXT MESSAGE GENERAL RECEIVER =================
 @bot.message_handler(func=lambda m: True)
@@ -483,7 +545,6 @@ def process_text_or_count(msg):
     str_chat_id = str(msg.chat.id)
     text = msg.text.strip()
     
-    # التعامل مع أزرار لوحة المفاتيح السفلى أولاً
     if text == "📊 فحص الـ DASH":
         test_all_dash(msg)
         return
@@ -510,41 +571,18 @@ def process_text_or_count(msg):
         bot.send_message(msg.chat.id, "🗑️ تم حذف جميع الصفحات والتوكنات المحفوظة بنجاح.", reply_markup=get_main_keyboard())
         return
 
-    # التحقق إذا كان المستخدم في مرحلة تحديد عدد البثوث المتكررة
+    # دعم استقبال الرقم نصياً في حال أراد المستخدم كتابة رقم حتى 20 يدوياً
     if str_chat_id in user_waiting_count and user_waiting_count[str_chat_id].get("awaiting_num"):
         try:
             count = int(text)
-            if count <= 0:
-                bot.send_message(msg.chat.id, "⚠️ الرجاء إدخال رقم أكبر من الصفر.", reply_markup=get_main_keyboard())
+            if count <= 0 or count > 20:
+                bot.send_message(msg.chat.id, "⚠️ الرجاء إدخال أو كتابة رقم صحيح يصل إلى 20.", reply_markup=get_main_keyboard())
                 return
         except ValueError:
             bot.send_message(msg.chat.id, "⚠️ الرجاء إرسال رقم صحيح فقط.", reply_markup=get_main_keyboard())
             return
             
-        channels = user_waiting_count[str_chat_id]["channels"]
-        saved = user_m3u8.get(str_chat_id, {})
-        started_total = 0
-        
-        for name in channels:
-            if name in saved:
-                source_url = saved[name]
-                for i in range(1, count + 1):
-                    unique_name = f"{name} Line {i}"
-                    
-                    if unique_name in user_streams.get(str_chat_id, {}):
-                        bot.send_message(msg.chat.id, f"⚠️ البث '{unique_name}' قيد التشغيل بالفعل.", reply_markup=get_main_keyboard())
-                        continue
-                        
-                    threading.Thread(
-                        target=stream_thread,
-                        args=(str_chat_id, source_url, unique_name),
-                        daemon=True
-                    ).start()
-                    started_total += 1
-                    time.sleep(0.5)
-                    
-        bot.send_message(msg.chat.id, f"✅ جاري إطلاق {started_total} بث متعدد متوازي بنجاح.", reply_markup=get_main_keyboard())
-        del user_waiting_count[str_chat_id]
+        execute_multi_stream(str_chat_id, count)
         return
 
     if str_chat_id not in active_page:
@@ -584,7 +622,7 @@ def run_dummy_server():
 
 # ================= RUN =================
 if __name__ == "__main__":
-    threading.Thread(target=run_dummy_server, daemon=True).start()
+    threading.Thread(run_dummy_server, daemon=True).start()
     print("🎬 Bot BeOut is running ...")
     try:
         bot.infinity_polling(timeout=10, long_polling_timeout=5)
