@@ -492,14 +492,12 @@ def show_stream_options(chat_id, channel_names):
 def handle_callback_queries(call):
     chat_id = str(call.message.chat.id)
     
-    # التعامل مع نقرات لوحة الأرقام الإنلاين المضافة حديثاً
     if call.data.startswith("num_"):
         if chat_id not in user_waiting_count or "channels" not in user_waiting_count[chat_id]:
             bot.send_message(chat_id, "❌ حدث خطأ في الجلسة، يرجى إعادة إرسال القناة.", reply_markup=get_main_keyboard())
             return
         
         count = int(call.data.split("_")[1])
-        # إزالة رسالة الأزرار منعاً للتكرار العشوائي بالضغط المتعدد
         try:
             bot.delete_message(chat_id, call.message.message_id)
         except:
@@ -536,7 +534,6 @@ def handle_callback_queries(call):
         
     elif mode == "multi":
         user_waiting_count[chat_id]["awaiting_num"] = True
-        # تعديل النص وحذف التوجيه القديم، مع إرفاق لوحة المفاتيح الرقمية المتطابقة مع الصورة
         bot.send_message(chat_id, "🚀 كم عدد البثوث المتزامنة التي تريد تشغيلها؟\n(يمكنك اختيار عدد أو كتابة رقم يصل إلى 20)", reply_markup=get_numeric_inline_keyboard())
 
 # ================= TEXT MESSAGE GENERAL RECEIVER =================
@@ -571,7 +568,6 @@ def process_text_or_count(msg):
         bot.send_message(msg.chat.id, "🗑️ تم حذف جميع الصفحات والتوكنات المحفوظة بنجاح.", reply_markup=get_main_keyboard())
         return
 
-    # دعم استقبال الرقم نصياً في حال أراد المستخدم كتابة رقم حتى 20 يدوياً
     if str_chat_id in user_waiting_count and user_waiting_count[str_chat_id].get("awaiting_num"):
         try:
             count = int(text)
@@ -622,7 +618,8 @@ def run_dummy_server():
 
 # ================= RUN =================
 if __name__ == "__main__":
-    threading.Thread(run_dummy_server, daemon=True).start()
+    # تم هنا تصحيح كتابة السطر المسبب للـ Crash ليعمل الخادم بشكل سليم 100%
+    threading.Thread(target=run_dummy_server, daemon=True).start()
     print("🎬 Bot BeOut is running ...")
     try:
         bot.infinity_polling(timeout=10, long_polling_timeout=5)
