@@ -85,11 +85,31 @@ def fix_dash_url(url):
         return re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", replacement, url)
     return url
 
+# دالة مخصصة لاستخراج الـ FB KEY الأصلي من الـ stream_url بدقة
+def extract_fb_key(stream_url):
+    if not stream_url:
+        return "غير متوفر"
+    # البحث عن النمط الذي يبدأ بـ FB- ومتبوع بأرقام وحروف
+    match = re.search(r"(FB-[\w-]+)", stream_url)
+    if match:
+        return match.group(1)
+    
+    # محاولة بديلة في حال كان المفتاح في نهاية الرابط مباشرة
+    try:
+        parts = stream_url.split('/')
+        if parts:
+            last_part = parts[-1]
+            if "FB-" in last_part:
+                return last_part.split('?')[0]
+    except:
+        pass
+    return "غير متوفر"
+
 # ================= FACEBOOK GRAPH API =================
 def get_new_stream(chat_id):
     page_name = active_page.get(chat_id)
     if not page_name:
-        return None, None, None, None, None
+        return None, None, None, None
 
     page = user_pages[chat_id][page_name]
 
@@ -106,7 +126,7 @@ def get_new_stream(chat_id):
         ).json()
 
         if "id" not in r:
-            return None, None, None, None, None
+            return None, None, None, None
 
         live_id = r["id"]
         info = requests.get(
@@ -118,15 +138,9 @@ def get_new_stream(chat_id):
             timeout=10
         ).json()
 
-        stream_url = info.get("stream_url")
-        fb_key = None
-        if stream_url and "rtmp" in stream_url:
-            # استخراج مفتاح البث من الرابط (الذي يأتي دائماً بعد rtmp://.../rtmp/)
-            fb_key = stream_url.split('/')[-1]
-
-        return stream_url, live_id, fix_dash_url(info.get("dash_preview_url")), page["token"], fb_key
+        return info.get("stream_url"), live_id, fix_dash_url(info.get("dash_preview_url")), page["token"]
     except:
-        return None, None, None, None, None
+        return None, None, None, None
 
 # ================= FFMPEG ENGINE =================
 def launch_ffmpeg(source, stream_url):
@@ -144,12 +158,14 @@ def launch_ffmpeg(source, stream_url):
 
 # ================= STREAM THREAD =================
 def stream_thread(chat_id, source, name):
-    stream_url, live_id, dash, token, fb_key = get_new_stream(chat_id)
+    stream_url, live_id, dash, token = get_new_stream(chat_id)
     if not stream_url:
         bot.send_message(chat_id, f"❌ فشل إنشاء البث للقناة {name}.", reply_markup=get_main_keyboard())
         return
 
     start_time = time.time()
+    # استخراج الـ FB KEY من رابط البث المولد حالياً
+    fb_key_extracted = extract_fb_key(stream_url)
 
     user_streams.setdefault(chat_id, {})[name] = {
         "proc": None,
@@ -159,7 +175,8 @@ def stream_thread(chat_id, source, name):
         "source": source,
         "dash_url": dash,
         "start_time": start_time,
-        "restarting": False
+        "restarting": False,
+        "fb_key": fb_key_extracted
     }
 
     def send_dash_later():
@@ -175,12 +192,9 @@ def stream_thread(chat_id, source, name):
                 if chat_id in user_streams and name in user_streams[chat_id]:
                     user_streams[chat_id][name]["dash_url"] = fresh  
                 
-                # إضافة مفتاح الفيس بوك الأصلي إلى نص الرسالة بالشكل المطلوب تماماً
-                msg_text = f"🎥 {name}\n👁️ DASH:\n{fresh}"
-                if fb_key:
-                    msg_text += f"\n🔑 FB KEY:\n{fb_key}"
-                    
-                bot.send_message(chat_id, msg_text, reply_markup=get_main_keyboard())
+                # الرسالة المعدلة لتشمل اسم القناة، الـ FB KEY المستخرج، والـ DASH الثابت
+                msg_text = f"🎥 {name}\n\n🔑 FB KEY:\n`{fb_key_extracted}`\n\n👁️ DASH:\n{fresh}"
+                bot.send_message(chat_id, msg_text, parse_mode="Markdown", reply_markup=get_main_keyboard())
         except:
             pass
 
@@ -191,6 +205,15 @@ def stream_thread(chat_id, source, name):
 
         if proc is None or proc.poll() is not None:
             user_streams[chat_id][name]["restarting"] = True
+            
+            # تحديث الروابط والمفاتيح عند إعادة تشغيل البث تلقائياً
+            new_stream_url, new_live_id, new_dash, _ = get_new_stream(chat_id)
+            if new_stream_url:
+                stream_url = new_stream_url
+                user_streams[chat_id][name]["live_id"] = new_live_id
+                user_streams[chat_id][name]["dash_url"] = new_dash
+                user_streams[chat_id][name]["fb_key"] = extract_fb_key(new_stream_url)
+
             proc = launch_ffmpeg(source, stream_url)
             user_streams[chat_id][name]["proc"] = proc
             user_streams[chat_id][name]["restarting"] = False
@@ -198,6 +221,14 @@ def stream_thread(chat_id, source, name):
         if proc.poll() is not None:
             time.sleep(0.33)
             user_streams[chat_id][name]["restarting"] = True
+            
+            new_stream_url, new_live_id, new_dash, _ = get_new_stream(chat_id)
+            if new_stream_url:
+                stream_url = new_stream_url
+                user_streams[chat_id][name]["live_id"] = new_live_id
+                user_streams[chat_id][name]["dash_url"] = new_dash
+                user_streams[chat_id][name]["fb_key"] = extract_fb_key(new_stream_url)
+
             proc = launch_ffmpeg(source, stream_url)
             user_streams[chat_id][name]["proc"] = proc
             user_streams[chat_id][name]["restarting"] = False
@@ -489,7 +520,6 @@ def show_stream_options(chat_id, channel_names):
 def handle_callback_queries(call):
     chat_id = str(call.message.chat.id)
     
-    # معالجة الضغط على أحد الأزرار الرقمية الإنلاين المضافة حديثاً
     if call.data.startswith("num_"):
         if chat_id not in user_waiting_count or "channels" not in user_waiting_count[chat_id]:
             bot.send_message(chat_id, "❌ حدث خطأ في الجلسة، يرجى إعادة إرسال القناة.", reply_markup=get_main_keyboard())
@@ -532,7 +562,6 @@ def handle_callback_queries(call):
         
     elif mode == "multi":
         user_waiting_count[chat_id]["awaiting_num"] = True
-        # تم تعديل النص ليطابق الصورة المرفقة 1000214545_2.png وحذف الجملة السابقة تماماً
         bot.send_message(
             chat_id, 
             "🔢 كم من بث تريد في كل قناة؟\n(يمكنك اختيار عدد أو كتابة رقم يصل إلى 20)", 
@@ -571,7 +600,6 @@ def process_text_or_count(msg):
         bot.send_message(msg.chat.id, "🗑️ تم حذف جميع الصفحات والتوكنات المحفوظة بنجاح.", reply_markup=get_main_keyboard())
         return
 
-    # معالجة الرقم المرسل كتابة يدوياً (كخيار إضافي مرن حتى 20)
     if str_chat_id in user_waiting_count and user_waiting_count[str_chat_id].get("awaiting_num"):
         try:
             count = int(text)
