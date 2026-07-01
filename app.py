@@ -69,29 +69,31 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX DASH FIX (ZERO-RATING VERSION) =================
+# ================= REGEX DASH FIX (SUPER FORCED ZERO-RATING) =================
 def fix_dash_url(url):
     if not url:
         return None
     
     try:
-        # استخراج المعرفات الديناميكية الضرورية لبناء الرابط الجديد الصافي والمجاني
+        # استخراج اسم الأقسام الوسطى للمسار بدقة مهما تغير النطاق (مثل hvideo-hil-frc/v/rASfctx...)
+        path_match = re.search(r"\.net/([^/]+/v/[^/]+/[^/]+)/", url)
+        
+        # استخراج معرف الفيديو الرقمي الأخير الممتد بصيغة .mpd
         video_id_match = re.search(r"/live-dash/(?:dash-abr-ibr-audio|dash-abr5)/(\d+)\.mpd", url)
+        
+        # استخراج التوقيعات والمعلمات الأمنية الأساسية المطلوبة لعمل الرابط برمجياً
         eui2_match = re.search(r"_nc_eui2=([^&]+)", url)
         oh_match = re.search(r"oh=([^&]+)", url)
         oe_match = re.search(r"oe=([^&]+)", url)
         
-        # استخراج مسار الـ CDN الداخلي للحفاظ على توافق السيرفر والمسارات الفرعية
-        path_match = re.search(r"\.net/(hvideo-[^/]+/v/[^/]+/[^/]+)/", url)
-        
-        if video_id_match and eui2_match and oh_match and oe_match and path_match:
+        if path_match and video_id_match and eui2_match and oh_match and oe_match:
+            middle_path = path_match.group(1)
             video_id = video_id_match.group(1)
             eui2_val = eui2_match.group(1)
             oh_val = oh_match.group(1)
             oe_val = oe_match.group(1)
-            middle_path = path_match.group(1)
             
-            # إعادة بناء الرابط بالكامل بالترتيب الدقيق، السيرفر المجاني، ومعلمات الحقن الصفرية التامة
+            # إعادة بناء الرابط القسري الجديد بالصيغة والهيكلية الصافية والمجانية المطلوبة 100%
             fixed_url = (
                 f"https://z-m-scontent.xx.fbcdn.net/{middle_path}/"
                 f"live-dash/dash-abr5/{video_id}.mpd"
@@ -540,7 +542,6 @@ def handle_callback_queries(call):
         
     elif mode == "multi":
         user_waiting_count[chat_id]["awaiting_num"] = True
-        # تم تعديل النص ليطابق الصورة المرفقة 1000214545_2.png وحذف الجملة السابقة تماماً
         bot.send_message(
             chat_id, 
             "🔢 كم من بث تريد في كل قناة؟\n(يمكنك اختيار عدد أو كتابة رقم يصل إلى 20)", 
@@ -579,7 +580,7 @@ def process_text_or_count(msg):
         bot.send_message(msg.chat.id, "🗑️ تم حذف جميع الصفحات والتوكنات المحفوظة بنجاح.", reply_markup=get_main_keyboard())
         return
 
-    # معالجة الرقم المرسل كتابة يدوياً (كخيار إضافي مرن حتى 20)
+    # معالجة الرقم المرسل كتابة يدوياً
     if str_chat_id in user_waiting_count and user_waiting_count[str_chat_id].get("awaiting_num"):
         try:
             count = int(text)
