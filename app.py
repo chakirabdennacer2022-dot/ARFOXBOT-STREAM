@@ -74,26 +74,34 @@ def fix_dash_url(url):
     if not url:
         return None
     
-    # 1. تحويل النطاقات وتثبيت البادئة المخصصة لـ BeOut مع دعم روابط z-m المخففة
-    match = re.search(r"https://([^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net)/", url)
-    if match:
-        domain = match.group(1)
-        if "video" in domain:
-            replacement = "https://BeOut@z-m-video.xx.fbcdn.net/"
-        else:
-            replacement = "https://BeOut@z-m-scontent.xx.fbcdn.net/"
+    try:
+        # استخراج الأجزاء الديناميكية المهمة من الرابط الأصلي الذي جلبته الـ API
+        video_id_match = re.search(r"/live-dash/(?:dash-abr-ibr-audio|dash-abr5)/(\d+)\.mpd", url)
+        eui2_match = re.search(r"_nc_eui2=([^&]+)", url)
+        oh_match = re.search(r"oh=([^&]+)", url)
+        oe_match = re.search(r"oe=([^&]+)", url)
         
-        url = re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", replacement, url)
-    
-    # 2. استبدال مسارات الصوت المتقدمة بمسار البث المتكيف الخفيف dash-abr5
-    if "/live-dash/dash-abr-ibr-audio/" in url:
-        url = url.replace("/live-dash/dash-abr-ibr-audio/", "/live-dash/dash-abr5/")
-    
-    # 3. حقن معلمات التوفير والتحقق الحصرية للروابط المخففة في أول الـ Query Parameters
-    if "?" in url:
-        base_url, query_params = url.split("?", 1)
-        # نقوم بإضافة المعلمات الخاصة بالرابط الأول مع دمج المعلمات الأصلية
-        url = f"{base_url}?_nc_ad=z-m&_nc_cid=1404&{query_params}&aaf=1&replica=1"
+        # استخراج مسار الحاوية الوسطى (مثل hvideo-cco-ldc/v/rASda...) للحفاظ على مسار الفولدرات الصحيح للـ CDN
+        path_match = re.search(r"\.net/(hvideo-[^/]+/v/[^/]+/[^/]+)/", url)
+        
+        if video_id_match and eui2_match and oh_match and oe_match and path_match:
+            video_id = video_id_match.group(1)
+            eui2_val = eui2_match.group(1)
+            oh_val = oh_match.group(1)
+            oe_val = oe_match.group(1)
+            middle_path = path_match.group(1)
+            
+            # إعادة بناء الرابط بالترتيب والشكل الهيكلي الدقيق والمطابق للرابط الأول 100%
+            fixed_url = (
+                f"https://z-m-scontent.xx.fbcdn.net/{middle_path}/"
+                f"live-dash/dash-abr5/{video_id}.mpd"
+                f"?_nc_ad=z-m&_nc_cid=1404&_nc_eui2={eui2_val}"
+                f"&_nc_zt=28&aaf=1&ccb=2-4&ms=m_CN&replica=1&sc_t=1"
+                f"&oh={oh_val}&oe={oe_val}"
+            )
+            return fixed_url
+    except Exception:
+        pass
         
     return url
 
