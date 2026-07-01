@@ -69,19 +69,19 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX DASH FIX =================
+# ================= REGEX DASH FIX (ZERO-RATING VERSION) =================
 def fix_dash_url(url):
     if not url:
         return None
     
     try:
-        # استخراج الأجزاء الديناميكية المهمة من الرابط الأصلي الذي جلبته الـ API
+        # استخراج المعرفات الديناميكية الضرورية لبناء الرابط الجديد الصافي والمجاني
         video_id_match = re.search(r"/live-dash/(?:dash-abr-ibr-audio|dash-abr5)/(\d+)\.mpd", url)
         eui2_match = re.search(r"_nc_eui2=([^&]+)", url)
         oh_match = re.search(r"oh=([^&]+)", url)
         oe_match = re.search(r"oe=([^&]+)", url)
         
-        # استخراج مسار الحاوية الوسطى (مثل hvideo-cco-ldc/v/rASda...) للحفاظ على مسار الفولدرات الصحيح للـ CDN
+        # استخراج مسار الـ CDN الداخلي للحفاظ على توافق السيرفر والمسارات الفرعية
         path_match = re.search(r"\.net/(hvideo-[^/]+/v/[^/]+/[^/]+)/", url)
         
         if video_id_match and eui2_match and oh_match and oe_match and path_match:
@@ -91,7 +91,7 @@ def fix_dash_url(url):
             oe_val = oe_match.group(1)
             middle_path = path_match.group(1)
             
-            # إعادة بناء الرابط بالترتيب والشكل الهيكلي الدقيق والمطابق للرابط الأول 100%
+            # إعادة بناء الرابط بالكامل بالترتيب الدقيق، السيرفر المجاني، ومعلمات الحقن الصفرية التامة
             fixed_url = (
                 f"https://z-m-scontent.xx.fbcdn.net/{middle_path}/"
                 f"live-dash/dash-abr5/{video_id}.mpd"
