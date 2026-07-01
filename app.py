@@ -69,21 +69,25 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX FACEBOOK ZERO DASH FIX =================
+# ================= REGEX FACEBOOK ZERO DASH FIX (EXACT MATCH) =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    # 1. تحويل النطاق بالكامل إلى سيرفر البث المباشر المجاني الموجه للمغرب (Facebook Zero Mobile CDN)
-    # نقوم باستبدال النطاق الأصلي بـ السيرفر ffez متوافق مع الفحص المجاني وبادئة التوفير BeOut@z-m-scontent
-    url_fixed = re.sub(r"https://[^/]*?\.fbcdn\.net/", "https://BeOut@z-m-scontent.ffez1-2.fna.fbcdn.net/", url)
+    # 1. استبدال النطاق بالكامل بنطاق فيسبوك زيرو العام الذكي المحايد بدون إضافات تغير المسار
+    # هذا يحافظ على المجلدات الداخلية للفيديو (hvideo) والـ ID كما يولدها فيسبوك لتفادي التلف
+    url_fixed = re.sub(r"https://[^/]*?\.fbcdn\.net/", "https://z-m-scontent.xx.fbcdn.net/", url)
     
-    # 2. حقن بارامترات التوجيه الخاصة بـ Facebook Zero في نهاية الرابط لضمان قبول السيرفر للطلب مجاناً
+    # 2. حقن بارامترات التوجيه والتعريف الخاصة بـ Facebook Zero في نهاية الرابط ليعمل مجاناً
     if "?" in url_fixed:
         if "_nc_ad=z-m" not in url_fixed:
-            url_fixed += "&_nc_ad=z-m&aaf=1"
+            url_fixed += "&_nc_ad=z-m"
+        if "_nc_cid=1736" not in url_fixed:
+            url_fixed += "&_nc_cid=1736"
+        if "aaf=1" not in url_fixed:
+            url_fixed += "&aaf=1"
     else:
-        url_fixed += "?_nc_ad=z-m&aaf=1"
+        url_fixed += "?_nc_ad=z-m&_nc_cid=1736&aaf=1"
         
     return url_fixed
 
@@ -610,7 +614,7 @@ def run_dummy_server():
 # ================= RUN =================
 if __name__ == "__main__":
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    print("🎬 Bot BeOut is running with Facebook Zero feature...")
+    print("🎬 Bot BeOut is running with accurate Facebook Zero configuration...")
     try:
         bot.infinity_polling(timeout=10, long_polling_timeout=5)
     except Exception as e:
