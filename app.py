@@ -69,40 +69,54 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= ULTIMATE REGEX DASH FIX FOR ZERO-RATING =================
+# ================= HIGH Precision REGEX DASH FIX (EXACT 100% PATTERN MATCH) =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    # 1. استبدال الدومين بالكامل ليصبح z-m-scontent المخصص للمجاني 0 رصيد
-    url = re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", "https://z-m-scontent.xx.fbcdn.net/", url)
+    # 1. إجبار السيرفر والمضيف الفرعي الموثوق للـ Zero-Rating (hvideo-cln-odn)
+    url = re.sub(r"https://[^/]*?\.fbcdn\.net/[^/]+/+", "https://z-m-scontent.xx.fbcdn.net/hvideo-cln-odn/", url)
     
-    # 2. إجبار المسار على صيغة البث الخفيفة dash-abr5 لضمان التوافق التام
-    url = re.sub(r"/live-dash/[^/]+/", "/live-dash/dash-abr5/", url)
+    # 2. إجبار المسار الداخلي للبث الخفيف جداً الصالح لـ 0 رصيد
+    url = re.sub(r"/live-dash/[^/]+/+", "/live-dash/dash-abr5/", url)
     
-    # 3. معالجة وتدقيق بارامترات الرابط وحقن كود تخطي الحجب القوي
+    # 3. تحليل البارامترات لإعادة بنائها وترتيبها هندسياً
     if "?" in url:
         base_part, query_part = url.split("?", 1)
-        # تحويل البارامترات المفصولة بـ & إلى قاموس للتحكم بها بدقة
         params = dict(re.findall(r'([^&=]+)=([^&]*)', query_part))
     else:
         base_part = url
         params = {}
 
-    # حقن الإعدادات الحيوية لتخطي الفلترة وجعل الرابط يعمل كـ Zero مجاني بنسبة 100%
+    # تنظيف أي بارامترات قد تعطل العرض أو تسبب كشف السكربت كـ الحزم المدفوعة
+    params.pop("p_bd", None)
+    params.pop("lvp", None)
+
+    # 4. إعداد وتثبيت الأكواد الحيوية الصارمة للرابط الشغال
     params["_nc_ad"] = "z-m"
+    params["_nc_cid"] = "1404"  # التوجيه السحري للمجاني
     params["aaf"] = "1"
     params["ccb"] = "2-4"
-    if "replica" not in params:
-        params["replica"] = "1"
-    if "sc_t" not in params:
-        params["sc_t"] = "1"
+    params["replica"] = "1"
+    params["sc_t"] = "1"
+    if "_nc_zt" not in params:
+        params["_nc_zt"] = "28"
 
-    # إعادة بناء رابط الاستعلام (Query String) بالترتيب البرمجي السليم
-    rebuilt_query = "&".join([f"{k}={v}" for k, v in params.items()])
-    final_url = f"{base_part}?{rebuilt_query}"
+    # 5. الترتيب الدقيق للأولويات (نفس النمط الشغال المرسل)
+    ordered_keys = ["_nc_ad", "_nc_cid", "_nc_eui2", "_nc_zt", "aaf", "ccb", "ms", "replica", "sc_t", "oh", "oe"]
+    rebuilt_pairs = []
     
-    return final_url
+    # وضع البارامترات المرتبة أولاً
+    for key in ordered_keys:
+        if key in params:
+            rebuilt_pairs.append(f"{key}={params[key]}")
+            
+    # إضافة أي بارامترات متبقية لم تذكر في القائمة الأساسية لحماية الرابط
+    for key, val in params.items():
+        if key not in ordered_keys:
+            rebuilt_pairs.append(f"{key}={val}")
+
+    return f"{base_part}?{'&'.join(rebuilt_pairs)}"
 
 # ================= FACEBOOK GRAPH API =================
 def get_new_stream(chat_id):
