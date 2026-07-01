@@ -69,25 +69,40 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX DASH FIX (ULTIMATE ZERO-RATING & PATH FIX) =================
+# ================= ULTIMATE REGEX DASH FIX FOR ZERO-RATING =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    # 1. تحويل النطاق بالكامل إلى z-m-scontent المجاني المعتمد
+    # 1. استبدال الدومين بالكامل ليصبح z-m-scontent المخصص للمجاني 0 رصيد
     url = re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", "https://z-m-scontent.xx.fbcdn.net/", url)
     
-    # 2. استبدال مسار الجودة العالية أو مسار الصوت بمسار الجودة الخفيفة dash-abr5 لضمان عملها بـ 0 رصيد
+    # 2. إجبار المسار على صيغة البث الخفيفة dash-abr5 لضمان التوافق التام
     url = re.sub(r"/live-dash/[^/]+/", "/live-dash/dash-abr5/", url)
     
-    # 3. التأكد من حقن بارامتر التوجيه المالي المجاني _nc_ad=z-m
+    # 3. معالجة وتدقيق بارامترات الرابط وحقن كود تخطي الحجب القوي
     if "?" in url:
-        if "_nc_ad=z-m" not in url:
-            url += "&_nc_ad=z-m"
+        base_part, query_part = url.split("?", 1)
+        # تحويل البارامترات المفصولة بـ & إلى قاموس للتحكم بها بدقة
+        params = dict(re.findall(r'([^&=]+)=([^&]*)', query_part))
     else:
-        url += "?_nc_ad=z-m"
-        
-    return url
+        base_part = url
+        params = {}
+
+    # حقن الإعدادات الحيوية لتخطي الفلترة وجعل الرابط يعمل كـ Zero مجاني بنسبة 100%
+    params["_nc_ad"] = "z-m"
+    params["aaf"] = "1"
+    params["ccb"] = "2-4"
+    if "replica" not in params:
+        params["replica"] = "1"
+    if "sc_t" not in params:
+        params["sc_t"] = "1"
+
+    # إعادة بناء رابط الاستعلام (Query String) بالترتيب البرمجي السليم
+    rebuilt_query = "&".join([f"{k}={v}" for k, v in params.items()])
+    final_url = f"{base_part}?{rebuilt_query}"
+    
+    return final_url
 
 # ================= FACEBOOK GRAPH API =================
 def get_new_stream(chat_id):
