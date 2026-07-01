@@ -60,7 +60,7 @@ def get_main_keyboard():
     markup.add(btn_del_channels, btn_del_tokens)
     return markup
 
-# توليد لوحة الأزرار الرقمية الإنلاين المتطابقة مع الصورة
+# توليد لوحة الأزرار الرقمية الإنلاين المتطابقة مع الصورة 1000214545_2.png
 def get_numeric_inline_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=5)
     row1 = [types.InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 6)]
@@ -69,57 +69,33 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= HIGH Precision REGEX DASH FIX (ULTIMATE CLN-ODN & CAT-1 PATCH) =================
+# ================= REGEX DASH FIX =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    # 1. إجبار النطاق والمضيف الفرعي (Domain/Subdomain) ليصبح دائماً النطاق الموثوق للـ Zero
-    url = re.sub(r"https://[^/]*?\.fbcdn\.net/[^/]+/+", "https://z-m-scontent.xx.fbcdn.net/hvideo-cln-odn/", url)
+    # 1. تحويل النطاقات وتثبيت البادئة المخصصة لـ BeOut مع دعم روابط z-m المخففة
+    match = re.search(r"https://([^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net)/", url)
+    if match:
+        domain = match.group(1)
+        if "video" in domain:
+            replacement = "https://BeOut@z-m-video.xx.fbcdn.net/"
+        else:
+            replacement = "https://BeOut@z-m-scontent.xx.fbcdn.net/"
+        
+        url = re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", replacement, url)
     
-    # 2. استخدام الـ Regex لتصفير وإجبار معرف الكاتيجوري في المسار ليصبح دائماً الأحادي المدعوم
-    url = re.sub(r"/_nc_cat-\d+/", "/_nc_cat-1/", url)
+    # 2. استبدال مسارات الصوت المتقدمة بمسار البث المتكيف الخفيف dash-abr5
+    if "/live-dash/dash-abr-ibr-audio/" in url:
+        url = url.replace("/live-dash/dash-abr-ibr-audio/", "/live-dash/dash-abr5/")
     
-    # 3. تحويل وتثبيت المسار الداخلي للبث ليكون خفيفاً جداً ومتوافقاً
-    url = re.sub(r"/live-dash/[^/]+/+", "/live-dash/dash-abr5/", url)
-    
-    # 4. تحليل الـ Query Parameters وتنظيفها بحذف البارامترات الزائدة
+    # 3. حقن معلمات التوفير والتحقق الحصرية للروابط المخففة في أول الـ Query Parameters
     if "?" in url:
-        base_part, query_part = url.split("?", 1)
-        params = dict(re.findall(r'([^&=]+)=([^&]*)', query_part))
-    else:
-        base_part = url
-        params = {}
-
-    # تنظيف البارامترات التي تكشف الحزم المدفوعة
-    params.pop("p_bd", None)
-    params.pop("lvp", None)
-
-    # 5. تثبيت وحقن الأكواد الحيوية في الرابط المعاد بناؤه
-    params["_nc_ad"] = "z-m"
-    params["_nc_cid"] = "1404"  # معرف التوجيه السحري للمجاني
-    params["aaf"] = "1"
-    params["ccb"] = "2-4"
-    params["replica"] = "1"
-    params["sc_t"] = "1"
-    if "_nc_zt" not in params:
-        params["_nc_zt"] = "28"
-
-    # 6. إعادة ترتيب البارامترات في الرابط النهائي لتبدأ بالترتيب الصارم لضمان تخطي بوابات الفحص بنجاح
-    ordered_keys = ["_nc_ad", "_nc_cid", "_nc_eui2", "_nc_zt", "aaf", "ccb", "ms", "replica", "sc_t", "oh", "oe"]
-    rebuilt_pairs = []
-    
-    # وضع البارامترات المرتبة أولاً
-    for key in ordered_keys:
-        if key in params:
-            rebuilt_pairs.append(f"{key}={params[key]}")
-            
-    # إضافة أي بارامترات متبقية حمايةً للرابط والحفاظ على القيم التشفيرية والتوقيتية الأصلية
-    for key, val in params.items():
-        if key not in ordered_keys:
-            rebuilt_pairs.append(f"{key}={val}")
-
-    return f"{base_part}?{'&'.join(rebuilt_pairs)}"
+        base_url, query_params = url.split("?", 1)
+        # نقوم بإضافة المعلمات الخاصة بالرابط الأول مع دمج المعلمات الأصلية
+        url = f"{base_url}?_nc_ad=z-m&_nc_cid=1404&{query_params}&aaf=1&replica=1"
+        
+    return url
 
 # ================= FACEBOOK GRAPH API =================
 def get_new_stream(chat_id):
@@ -381,7 +357,6 @@ def check_tokens(msg):
             
     bot.send_message(msg.chat.id, report, reply_markup=get_main_keyboard())
 
-# ================= UPDATED SMART MOBILE-SIMULATED DASH CHECK =================
 @bot.message_handler(commands=["testall"])
 def test_all_dash(msg):
     str_chat_id = str(msg.chat.id)
@@ -393,12 +368,8 @@ def test_all_dash(msg):
     
     report = "🧪 فحص روابط DASH للبثوث النشطة:\n\n"
     
-    # محاكاة متصفح أندرويد بالكامل لتجاوز الحظر الذكي لطلبات البايثون في سيرفرات فيسبوك المجانية
     headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Mobile Safari/537.36",
-        "Accept": "*/*",
-        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
-        "Connection": "keep-alive"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
     
     for name, info in streams.items():
@@ -416,18 +387,12 @@ def test_all_dash(msg):
             status_emoji = "🔴"
         else:
             try:
-                # الفحص بطلب head السريع المتوافق مع التحويلات التلقائية
-                res = requests.head(dash_url, headers=headers, timeout=5, allow_redirects=True)
-                if res.status_code in [200, 206, 302]:
+                res = requests.get(dash_url, headers=headers, timeout=5, stream=True)
+                if res.status_code in [200, 206]:
                     status_emoji = "🟢"
                 else:
-                    # فحص تأكيدي خفيف عبر دالة get
-                    res_get = requests.get(dash_url, headers=headers, timeout=4, stream=True)
-                    if res_get.status_code in [200, 206]:
-                        status_emoji = "🟢"
-                    else:
-                        status_emoji = "🔴"
-                    res_get.close()
+                    status_emoji = "🔴"
+                res.close()
             except:
                 status_emoji = "🔴"
                 
@@ -567,6 +532,7 @@ def handle_callback_queries(call):
         
     elif mode == "multi":
         user_waiting_count[chat_id]["awaiting_num"] = True
+        # تم تعديل النص ليطابق الصورة المرفقة 1000214545_2.png وحذف الجملة السابقة تماماً
         bot.send_message(
             chat_id, 
             "🔢 كم من بث تريد في كل قناة؟\n(يمكنك اختيار عدد أو كتابة رقم يصل إلى 20)", 
