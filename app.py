@@ -60,7 +60,7 @@ def get_main_keyboard():
     markup.add(btn_del_channels, btn_del_tokens)
     return markup
 
-# توليد لوحة الأزرار الرقمية الإنلاين المتطابقة
+# توليد لوحة الأزرار الرقمية الإنلاين
 def get_numeric_inline_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=5)
     row1 = [types.InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 6)]
@@ -69,25 +69,43 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX FACEBOOK ZERO DASH FIX (EXACT MATCH) =================
+# ================= REGEX FACEBOOK ZERO DASH FIX (THE MAGIC SOLUTION) =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    # 1. استبدال النطاق بالكامل بنطاق فيسبوك زيرو العام الذكي المحايد بدون إضافات تغير المسار
-    # هذا يحافظ على المجلدات الداخلية للفيديو (hvideo) والـ ID كما يولدها فيسبوك لتفادي التلف
+    # 1. استبدال النطاق بنطاق الزيرو العام الشغال 100%
     url_fixed = re.sub(r"https://[^/]*?\.fbcdn\.net/", "https://z-m-scontent.xx.fbcdn.net/", url)
     
-    # 2. حقن بارامترات التوجيه والتعريف الخاصة بـ Facebook Zero في نهاية الرابط ليعمل مجاناً
+    # 2. الخدعة الكبرى: استبدال مسار الصوت المعقد بمسار البث الشغال dash-abr5
+    if "dash-abr-ibr-audio" in url_fixed:
+        url_fixed = url_fixed.replace("dash-abr-ibr-audio", "dash-abr5")
+    
+    # 3. تنظيف البارامترات الزائدة وحقن البارامترات الشغالة بدقة وبنفس الترتيب
     if "?" in url_fixed:
-        if "_nc_ad=z-m" not in url_fixed:
-            url_fixed += "&_nc_ad=z-m"
-        if "_nc_cid=1736" not in url_fixed:
-            url_fixed += "&_nc_cid=1736"
-        if "aaf=1" not in url_fixed:
-            url_fixed += "&aaf=1"
+        base_url = url_fixed.split("?")[0]
+        query = url_fixed.split("?")[1]
+        
+        # استخراج المعطيات الأمنية الحساسة من الرابط الأصلي
+        oe_match = re.search(r"oe=([A-Za-z0-9]+)", query)
+        oh_match = re.search(r"oh=([A-Za-z0-9_]+)", query)
+        eui2_match = re.search(r"_nc_eui2=([A-Za-z0-9_\-]+)", query)
+        ohc_match = re.search(r"_nc_ohc=([A-Za-z0-9_\-]+)", query)
+        
+        oe = oe_match.group(1) if oe_match else ""
+        oh = oh_match.group(1) if oh_match else ""
+        eui2 = eui2_match.group(1) if eui2_match else ""
+        ohc = ohc_match.group(1) if ohc_match else ""
+        
+        # إعادة بناء الرابط بالصيغة التامة المطابقة للرابط الشغال
+        url_fixed = (
+            f"{base_url}?_nc_ad=z-m&_nc_cid=1736"
+            f"&_nc_eui2={eui2}&_nc_zt=28&aaf=1&ccb=2-4"
+            f"&ms=m_CN&replica=1&sc_t=1&_nc_ohc={ohc}"
+            f"&oh={oh}&oe={oe}"
+        )
     else:
-        url_fixed += "?_nc_ad=z-m&_nc_cid=1736&aaf=1"
+        url_fixed += "?_nc_ad=z-m&_nc_cid=1736&aaf=1&_nc_zt=28&ccb=2-4"
         
     return url_fixed
 
@@ -427,9 +445,7 @@ def test_m3u8_channels(msg):
         except:
             status_emoji = "🔴 غير مستجيب ❌"
             
-        report += f"《 {status_emoji} {name} ({link_type}) 》\n"
-        
-    bot.edit_message_text(report, chat_id=msg.chat.id, message_id=status_msg.message_id, reply_markup=get_main_keyboard())
+        bot.edit_message_text(report, chat_id=msg.chat.id, message_id=status_msg.message_id, reply_markup=get_main_keyboard())
 
 # ================= TXT IMPORT =================
 @bot.message_handler(content_types=["document"])
@@ -601,7 +617,7 @@ def process_text_or_count(msg):
 # ================= KEEP-ALIVE SERVER =================
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
+        self.send_call(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b"Bot is active and running!")
