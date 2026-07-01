@@ -60,7 +60,7 @@ def get_main_keyboard():
     markup.add(btn_del_channels, btn_del_tokens)
     return markup
 
-# توليد لوحة الأزرار الرقمية الإنلاين المتطابقة مع الصورة 1000214545_2.png
+# توليد لوحة الأزرار الرقمية الإنلاين المتطابقة
 def get_numeric_inline_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=5)
     row1 = [types.InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 6)]
@@ -69,43 +69,23 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX DASH FIX (SUPER FORCED ZERO-RATING) =================
+# ================= REGEX FACEBOOK ZERO DASH FIX =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    try:
-        # استخراج اسم الأقسام الوسطى للمسار بدقة مهما تغير النطاق (مثل hvideo-hil-frc/v/rASfctx...)
-        path_match = re.search(r"\.net/([^/]+/v/[^/]+/[^/]+)/", url)
+    # 1. تحويل النطاق بالكامل إلى سيرفر البث المباشر المجاني الموجه للمغرب (Facebook Zero Mobile CDN)
+    # نقوم باستبدال النطاق الأصلي بـ السيرفر ffez متوافق مع الفحص المجاني وبادئة التوفير BeOut@z-m-scontent
+    url_fixed = re.sub(r"https://[^/]*?\.fbcdn\.net/", "https://BeOut@z-m-scontent.ffez1-2.fna.fbcdn.net/", url)
+    
+    # 2. حقن بارامترات التوجيه الخاصة بـ Facebook Zero في نهاية الرابط لضمان قبول السيرفر للطلب مجاناً
+    if "?" in url_fixed:
+        if "_nc_ad=z-m" not in url_fixed:
+            url_fixed += "&_nc_ad=z-m&aaf=1"
+    else:
+        url_fixed += "?_nc_ad=z-m&aaf=1"
         
-        # استخراج معرف الفيديو الرقمي الأخير الممتد بصيغة .mpd
-        video_id_match = re.search(r"/live-dash/(?:dash-abr-ibr-audio|dash-abr5)/(\d+)\.mpd", url)
-        
-        # استخراج التوقيعات والمعلمات الأمنية الأساسية المطلوبة لعمل الرابط برمجياً
-        eui2_match = re.search(r"_nc_eui2=([^&]+)", url)
-        oh_match = re.search(r"oh=([^&]+)", url)
-        oe_match = re.search(r"oe=([^&]+)", url)
-        
-        if path_match and video_id_match and eui2_match and oh_match and oe_match:
-            middle_path = path_match.group(1)
-            video_id = video_id_match.group(1)
-            eui2_val = eui2_match.group(1)
-            oh_val = oh_match.group(1)
-            oe_val = oe_match.group(1)
-            
-            # إعادة بناء الرابط القسري الجديد بالصيغة والهيكلية الصافية والمجانية المطلوبة 100%
-            fixed_url = (
-                f"https://z-m-scontent.xx.fbcdn.net/{middle_path}/"
-                f"live-dash/dash-abr5/{video_id}.mpd"
-                f"?_nc_ad=z-m&_nc_cid=1404&_nc_eui2={eui2_val}"
-                f"&_nc_zt=28&aaf=1&ccb=2-4&ms=m_CN&replica=1&sc_t=1"
-                f"&oh={oh_val}&oe={oe_val}"
-            )
-            return fixed_url
-    except Exception:
-        pass
-        
-    return url
+    return url_fixed
 
 # ================= FACEBOOK GRAPH API =================
 def get_new_stream(chat_id):
@@ -190,7 +170,7 @@ def stream_thread(chat_id, source, name):
             if fresh:
                 if chat_id in user_streams and name in user_streams[chat_id]:
                     user_streams[chat_id][name]["dash_url"] = fresh  
-                bot.send_message(chat_id, f"🎥 {name}\n👁️ DASH:\n{fresh}", reply_markup=get_main_keyboard())
+                bot.send_message(chat_id, f"🎥 {name}\n👁️ Facebook Zero DASH:\n{fresh}", reply_markup=get_main_keyboard())
         except:
             pass
 
@@ -499,7 +479,6 @@ def show_stream_options(chat_id, channel_names):
 def handle_callback_queries(call):
     chat_id = str(call.message.chat.id)
     
-    # معالجة الضغط على أحد الأزرار الرقمية الإنلاين المضافة حديثاً
     if call.data.startswith("num_"):
         if chat_id not in user_waiting_count or "channels" not in user_waiting_count[chat_id]:
             bot.send_message(chat_id, "❌ حدث خطأ في الجلسة، يرجى إعادة إرسال القناة.", reply_markup=get_main_keyboard())
@@ -580,7 +559,6 @@ def process_text_or_count(msg):
         bot.send_message(msg.chat.id, "🗑️ تم حذف جميع الصفحات والتوكنات المحفوظة بنجاح.", reply_markup=get_main_keyboard())
         return
 
-    # معالجة الرقم المرسل كتابة يدوياً
     if str_chat_id in user_waiting_count and user_waiting_count[str_chat_id].get("awaiting_num"):
         try:
             count = int(text)
@@ -616,7 +594,7 @@ def process_text_or_count(msg):
     elif not_found:
         bot.send_message(msg.chat.id, "❌ لم يتم العثور على اسم قناة مطابق.", reply_markup=get_main_keyboard())
 
-# ================= KEEP-ALIVE SERVER (FOR FREE HOSTING) =================
+# ================= KEEP-ALIVE SERVER =================
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -632,7 +610,7 @@ def run_dummy_server():
 # ================= RUN =================
 if __name__ == "__main__":
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    print("🎬 Bot BeOut is running ...")
+    print("🎬 Bot BeOut is running with Facebook Zero feature...")
     try:
         bot.infinity_polling(timeout=10, long_polling_timeout=5)
     except Exception as e:
