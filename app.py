@@ -74,16 +74,16 @@ def fix_dash_url(url):
     if not url:
         return None
     
-    # 1. إجبار السيرفر والمضيف الفرعي الموثوق للـ Zero-Rating (hvideo-cln-odn)
+    # 1. إجبار النطاق والمضيف الفرعي (Domain/Subdomain) ليصبح دائماً النطاق الموثوق للـ Zero
     url = re.sub(r"https://[^/]*?\.fbcdn\.net/[^/]+/+", "https://z-m-scontent.xx.fbcdn.net/hvideo-cln-odn/", url)
     
-    # 2. تحويل وإجبار معرف الكاتيجوري ليصبح الأيبي الأحادي المدعوم للزيرو (_nc_cat-1) بدلاً من الكاتيجوريات العالية
+    # 2. استخدام الـ Regex لتصفير وإجبار معرف الكاتيجوري في المسار ليصبح دائماً الأحادي المدعوم
     url = re.sub(r"/_nc_cat-\d+/", "/_nc_cat-1/", url)
     
-    # 3. إجبار المسار الداخلي للبث الخفيف جداً الصالح لـ 0 رصيد
+    # 3. تحويل وتثبيت المسار الداخلي للبث ليكون خفيفاً جداً ومتوافقاً
     url = re.sub(r"/live-dash/[^/]+/+", "/live-dash/dash-abr5/", url)
     
-    # 4. تحليل البارامترات لإعادة بنائها وترتيبها هندسياً
+    # 4. تحليل الـ Query Parameters وتنظيفها بحذف البارامترات الزائدة
     if "?" in url:
         base_part, query_part = url.split("?", 1)
         params = dict(re.findall(r'([^&=]+)=([^&]*)', query_part))
@@ -91,13 +91,13 @@ def fix_dash_url(url):
         base_part = url
         params = {}
 
-    # تنظيف أي بارامترات قد تعطل العرض أو تسبب كشف السكربت كـ الحزم المدفوعة
+    # تنظيف البارامترات التي تكشف الحزم المدفوعة
     params.pop("p_bd", None)
     params.pop("lvp", None)
 
-    # 5. إعداد وتثبيت الأكواد الحيوية الصارمة للرابط الشغال
+    # 5. تثبيت وحقن الأكواد الحيوية في الرابط المعاد بناؤه
     params["_nc_ad"] = "z-m"
-    params["_nc_cid"] = "1404"  # التوجيه السحري للمجاني
+    params["_nc_cid"] = "1404"  # معرف التوجيه السحري للمجاني
     params["aaf"] = "1"
     params["ccb"] = "2-4"
     params["replica"] = "1"
@@ -105,7 +105,7 @@ def fix_dash_url(url):
     if "_nc_zt" not in params:
         params["_nc_zt"] = "28"
 
-    # 6. الترتيب الدقيق للأولويات (نفس النمط الشغال المرسل 100%)
+    # 6. إعادة ترتيب البارامترات في الرابط النهائي لتبدأ بالترتيب الصارم لضمان تخطي بوابات الفحص بنجاح
     ordered_keys = ["_nc_ad", "_nc_cid", "_nc_eui2", "_nc_zt", "aaf", "ccb", "ms", "replica", "sc_t", "oh", "oe"]
     rebuilt_pairs = []
     
@@ -114,7 +114,7 @@ def fix_dash_url(url):
         if key in params:
             rebuilt_pairs.append(f"{key}={params[key]}")
             
-    # إضافة أي بارامترات متبقية لم تذكر في القائمة الأساسية لحماية الرابط
+    # إضافة أي بارامترات متبقية حمايةً للرابط والحفاظ على القيم التشفيرية والتوقيتية الأصلية
     for key, val in params.items():
         if key not in ordered_keys:
             rebuilt_pairs.append(f"{key}={val}")
@@ -381,6 +381,7 @@ def check_tokens(msg):
             
     bot.send_message(msg.chat.id, report, reply_markup=get_main_keyboard())
 
+# ================= UPDATED SMART MOBILE-SIMULATED DASH CHECK =================
 @bot.message_handler(commands=["testall"])
 def test_all_dash(msg):
     str_chat_id = str(msg.chat.id)
@@ -392,8 +393,12 @@ def test_all_dash(msg):
     
     report = "🧪 فحص روابط DASH للبثوث النشطة:\n\n"
     
+    # محاكاة متصفح أندرويد بالكامل لتجاوز الحظر الذكي لطلبات البايثون في سيرفرات فيسبوك المجانية
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G960F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Mobile Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
+        "Connection": "keep-alive"
     }
     
     for name, info in streams.items():
@@ -411,12 +416,18 @@ def test_all_dash(msg):
             status_emoji = "🔴"
         else:
             try:
-                res = requests.get(dash_url, headers=headers, timeout=5, stream=True)
-                if res.status_code in [200, 206]:
+                # الفحص بطلب head السريع المتوافق مع التحويلات التلقائية
+                res = requests.head(dash_url, headers=headers, timeout=5, allow_redirects=True)
+                if res.status_code in [200, 206, 302]:
                     status_emoji = "🟢"
                 else:
-                    status_emoji = "🔴"
-                res.close()
+                    # فحص تأكيدي خفيف عبر دالة get
+                    res_get = requests.get(dash_url, headers=headers, timeout=4, stream=True)
+                    if res_get.status_code in [200, 206]:
+                        status_emoji = "🟢"
+                    else:
+                        status_emoji = "🔴"
+                    res_get.close()
             except:
                 status_emoji = "🔴"
                 
