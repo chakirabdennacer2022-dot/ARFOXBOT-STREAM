@@ -69,7 +69,7 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= HIGH Precision REGEX DASH FIX (EXACT 100% PATTERN MATCH) =================
+# ================= HIGH Precision REGEX DASH FIX (ULTIMATE CLN-ODN & CAT-1 PATCH) =================
 def fix_dash_url(url):
     if not url:
         return None
@@ -77,10 +77,13 @@ def fix_dash_url(url):
     # 1. إجبار السيرفر والمضيف الفرعي الموثوق للـ Zero-Rating (hvideo-cln-odn)
     url = re.sub(r"https://[^/]*?\.fbcdn\.net/[^/]+/+", "https://z-m-scontent.xx.fbcdn.net/hvideo-cln-odn/", url)
     
-    # 2. إجبار المسار الداخلي للبث الخفيف جداً الصالح لـ 0 رصيد
+    # 2. تحويل وإجبار معرف الكاتيجوري ليصبح الأيبي الأحادي المدعوم للزيرو (_nc_cat-1) بدلاً من الكاتيجوريات العالية
+    url = re.sub(r"/_nc_cat-\d+/", "/_nc_cat-1/", url)
+    
+    # 3. إجبار المسار الداخلي للبث الخفيف جداً الصالح لـ 0 رصيد
     url = re.sub(r"/live-dash/[^/]+/+", "/live-dash/dash-abr5/", url)
     
-    # 3. تحليل البارامترات لإعادة بنائها وترتيبها هندسياً
+    # 4. تحليل البارامترات لإعادة بنائها وترتيبها هندسياً
     if "?" in url:
         base_part, query_part = url.split("?", 1)
         params = dict(re.findall(r'([^&=]+)=([^&]*)', query_part))
@@ -92,7 +95,7 @@ def fix_dash_url(url):
     params.pop("p_bd", None)
     params.pop("lvp", None)
 
-    # 4. إعداد وتثبيت الأكواد الحيوية الصارمة للرابط الشغال
+    # 5. إعداد وتثبيت الأكواد الحيوية الصارمة للرابط الشغال
     params["_nc_ad"] = "z-m"
     params["_nc_cid"] = "1404"  # التوجيه السحري للمجاني
     params["aaf"] = "1"
@@ -102,7 +105,7 @@ def fix_dash_url(url):
     if "_nc_zt" not in params:
         params["_nc_zt"] = "28"
 
-    # 5. الترتيب الدقيق للأولويات (نفس النمط الشغال المرسل)
+    # 6. الترتيب الدقيق للأولويات (نفس النمط الشغال المرسل 100%)
     ordered_keys = ["_nc_ad", "_nc_cid", "_nc_eui2", "_nc_zt", "aaf", "ccb", "ms", "replica", "sc_t", "oh", "oe"]
     rebuilt_pairs = []
     
