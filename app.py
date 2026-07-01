@@ -60,7 +60,7 @@ def get_main_keyboard():
     markup.add(btn_del_channels, btn_del_tokens)
     return markup
 
-# توليد لوحة الأزرار الرقمية الإنلاين المتطابقة مع الصورة 1000214545_2.png
+# توليد لوحة الأزرار الرقمية الإنلاين المتطابقة مع الصورة
 def get_numeric_inline_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=5)
     row1 = [types.InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 6)]
@@ -69,20 +69,24 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX DASH FIX =================
+# ================= REGEX DASH FIX (ULTIMATE ZERO-RATING & PATH FIX) =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    match = re.search(r"https://([^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net)/", url)
-    if match:
-        domain = match.group(1)
-        if "video" in domain:
-            replacement = "https://BeOut@video.xx.fbcdn.net/"
-        else:
-            replacement = "https://BeOut@scontent.xx.fbcdn.net/"
+    # 1. تحويل النطاق بالكامل إلى z-m-scontent المجاني المعتمد
+    url = re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", "https://z-m-scontent.xx.fbcdn.net/", url)
+    
+    # 2. استبدال مسار الجودة العالية أو مسار الصوت بمسار الجودة الخفيفة dash-abr5 لضمان عملها بـ 0 رصيد
+    url = re.sub(r"/live-dash/[^/]+/", "/live-dash/dash-abr5/", url)
+    
+    # 3. التأكد من حقن بارامتر التوجيه المالي المجاني _nc_ad=z-m
+    if "?" in url:
+        if "_nc_ad=z-m" not in url:
+            url += "&_nc_ad=z-m"
+    else:
+        url += "?_nc_ad=z-m"
         
-        return re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", replacement, url)
     return url
 
 # ================= FACEBOOK GRAPH API =================
@@ -520,7 +524,6 @@ def handle_callback_queries(call):
         
     elif mode == "multi":
         user_waiting_count[chat_id]["awaiting_num"] = True
-        # تم تعديل النص ليطابق الصورة المرفقة 1000214545_2.png وحذف الجملة السابقة تماماً
         bot.send_message(
             chat_id, 
             "🔢 كم من بث تريد في كل قناة؟\n(يمكنك اختيار عدد أو كتابة رقم يصل إلى 20)", 
