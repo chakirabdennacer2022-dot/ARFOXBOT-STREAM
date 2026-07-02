@@ -60,7 +60,7 @@ def get_main_keyboard():
     markup.add(btn_del_channels, btn_del_tokens)
     return markup
 
-# توليد لوحة الأزرار الرقمية الإنلاين
+# توليد لوحة الأزرار الرقمية الإنلاين المتطابقة مع الصورة 1000214545_2.png
 def get_numeric_inline_keyboard():
     markup = types.InlineKeyboardMarkup(row_width=5)
     row1 = [types.InlineKeyboardButton(str(i), callback_data=f"num_{i}") for i in range(1, 6)]
@@ -69,49 +69,21 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX FACEBOOK ZERO DASH FIX (THE UPDATED SMART SOLUTION) =================
+# ================= REGEX DASH FIX =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    # 1. استبدال النطاق بنطاق الزيرو العام الشغال 100%
-    url_fixed = re.sub(r"https://[^/]*?\.fbcdn\.net/", "https://z-m-scontent.xx.fbcdn.net/", url)
-    
-    # 2. الخدعة الكبرى: استبدال مسار الصوت المعقد بمسار البث الشغال dash-abr5
-    if "dash-abr-ibr-audio" in url_fixed:
-        url_fixed = url_fixed.replace("dash-abr-ibr-audio", "dash-abr5")
-    
-    # 3. تنظيف البارامترات الزائدة وحقن البارامترات الشغالة بدقة وبنفس الترتيب
-    if "?" in url_fixed:
-        base_url = url_fixed.split("?")[0]
-        query = url_fixed.split("?")[1]
+    match = re.search(r"https://([^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net)/", url)
+    if match:
+        domain = match.group(1)
+        if "video" in domain:
+            replacement = "https://BeOut@video.xx.fbcdn.net/"
+        else:
+            replacement = "https://BeOut@scontent.xx.fbcdn.net/"
         
-        # [تحديث ذكي]: استخراج nc_ohc سواء كان في الكويري السفلي أو معلقاً في الـ Path العلوي كمجلد
-        ohc_match = re.search(r"_nc_ohc=([A-Za-z0-9_\-]+)", query)
-        if not ohc_match or not ohc_match.group(1):
-            # إذا لم يجده بالأسفل أو وجده فارغاً، يبحث عنه في المسار العلوي المقترن بـ فلاشة ناقص (_) أو خط (-)
-            ohc_match = re.search(r"_nc_ohc[-_]([A-Za-z0-9_\-]+)", url)
-            
-        oe_match = re.search(r"oe=([A-Za-z0-9]+)", query)
-        oh_match = re.search(r"oh=([A-Za-z0-9_]+)", query)
-        eui2_match = re.search(r"_nc_eui2=([A-Za-z0-9_\-]+)", query)
-        
-        oe = oe_match.group(1) if oe_match else ""
-        oh = oh_match.group(1) if oh_match else ""
-        eui2 = eui2_match.group(1) if eui2_match else ""
-        ohc = ohc_match.group(1) if ohc_match else ""
-        
-        # إعادة بناء الرابط بالصيغة التامة المطابقة للرابط الشغال ومنع التضارب
-        url_fixed = (
-            f"{base_url}?_nc_ad=z-m&_nc_cid=1736"
-            f"&_nc_eui2={eui2}&_nc_zt=28&aaf=1&ccb=2-4"
-            f"&ms=m_CN&replica=1&sc_t=1&_nc_ohc={ohc}"
-            f"&oh={oh}&oe={oe}"
-        )
-    else:
-        url_fixed += "?_nc_ad=z-m&_nc_cid=1736&aaf=1&_nc_zt=28&ccb=2-4"
-        
-    return url_fixed
+        return re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", replacement, url)
+    return url
 
 # ================= FACEBOOK GRAPH API =================
 def get_new_stream(chat_id):
@@ -196,7 +168,7 @@ def stream_thread(chat_id, source, name):
             if fresh:
                 if chat_id in user_streams and name in user_streams[chat_id]:
                     user_streams[chat_id][name]["dash_url"] = fresh  
-                bot.send_message(chat_id, f"🎥 {name}\n👁️ Facebook Zero DASH:\n{fresh}", reply_markup=get_main_keyboard())
+                bot.send_message(chat_id, f"🎥 {name}\n👁️ DASH:\n{fresh}", reply_markup=get_main_keyboard())
         except:
             pass
 
@@ -270,7 +242,7 @@ def execute_multi_stream(chat_id, count):
                 started_total += 1
                 time.sleep(0.5)
                 
-    bot.send_message(chat_id, f"✅ jari itlaq {started_total} stream mutawazi بنجاح.", reply_markup=get_main_keyboard())
+    bot.send_message(chat_id, f"✅ جاري إطلاق {started_total} بث متعدد متوازي بنجاح.", reply_markup=get_main_keyboard())
     if chat_id in user_waiting_count:
         del user_waiting_count[chat_id]
 
@@ -278,7 +250,7 @@ def execute_multi_stream(chat_id, count):
 
 @bot.message_handler(commands=["start"])
 def send_welcome(msg):
-    bot.send_message(msg.chat.id, "🎬 أهلاً بك في لوحة تحكم ZenGo المحدثة بالكامل وإصلاح ثغرة التوكنات الفارغة.", reply_markup=get_main_keyboard())
+    bot.send_message(msg.chat.id, "🎬 أهلاً بك في لوحة تحكم BeOut المحدثة. تم تفعيل أزرار التحكم السريعة بأسفل الشاشة.", reply_markup=get_main_keyboard())
 
 @bot.message_handler(commands=["addpage"])
 def add_page(msg):
@@ -383,6 +355,7 @@ def test_all_dash(msg):
         return
     
     report = "🧪 فحص روابط DASH للبثوث النشطة:\n\n"
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
@@ -425,11 +398,19 @@ def test_m3u8_channels(msg):
     
     status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة...")
     report = "🧪 تقرير فحص القنوات المحفوظة:\n\n"
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
     
     for name, url in channels.items():
+        if ".m3u8" in url.lower():
+            link_type = "M3U8"
+        elif ".mpd" in url.lower():
+            link_type = "MPD"
+        else:
+            link_type = "URL"
+            
         try:
             res = requests.get(url, headers=headers, timeout=5, allow_redirects=True, stream=True)
             if res.status_code >= 200 and res.status_code < 400:
@@ -440,7 +421,7 @@ def test_m3u8_channels(msg):
         except:
             status_emoji = "🔴 غير مستجيب ❌"
             
-        report += f"- {name}: {status_emoji}\n"
+        report += f"《 {status_emoji} {name} ({link_type}) 》\n"
         
     bot.edit_message_text(report, chat_id=msg.chat.id, message_id=status_msg.message_id, reply_markup=get_main_keyboard())
 
@@ -496,6 +477,7 @@ def show_stream_options(chat_id, channel_names):
 def handle_callback_queries(call):
     chat_id = str(call.message.chat.id)
     
+    # معالجة الضغط على أحد الأزرار الرقمية الإنلاين المضافة حديثاً
     if call.data.startswith("num_"):
         if chat_id not in user_waiting_count or "channels" not in user_waiting_count[chat_id]:
             bot.send_message(chat_id, "❌ حدث خطأ في الجلسة، يرجى إعادة إرسال القناة.", reply_markup=get_main_keyboard())
@@ -538,6 +520,7 @@ def handle_callback_queries(call):
         
     elif mode == "multi":
         user_waiting_count[chat_id]["awaiting_num"] = True
+        # تم تعديل النص ليطابق الصورة المرفقة 1000214545_2.png وحذف الجملة السابقة تماماً
         bot.send_message(
             chat_id, 
             "🔢 كم من بث تريد في كل قناة؟\n(يمكنك اختيار عدد أو كتابة رقم يصل إلى 20)", 
@@ -576,6 +559,7 @@ def process_text_or_count(msg):
         bot.send_message(msg.chat.id, "🗑️ تم حذف جميع الصفحات والتوكنات المحفوظة بنجاح.", reply_markup=get_main_keyboard())
         return
 
+    # معالجة الرقم المرسل كتابة يدوياً (كخيار إضافي مرن حتى 20)
     if str_chat_id in user_waiting_count and user_waiting_count[str_chat_id].get("awaiting_num"):
         try:
             count = int(text)
@@ -611,7 +595,7 @@ def process_text_or_count(msg):
     elif not_found:
         bot.send_message(msg.chat.id, "❌ لم يتم العثور على اسم قناة مطابق.", reply_markup=get_main_keyboard())
 
-# ================= KEEP-ALIVE SERVER =================
+# ================= KEEP-ALIVE SERVER (FOR FREE HOSTING) =================
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -627,7 +611,7 @@ def run_dummy_server():
 # ================= RUN =================
 if __name__ == "__main__":
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    print("🎬 Bot is running with updated regex fix...")
+    print("🎬 Bot BeOut is running ...")
     try:
         bot.infinity_polling(timeout=10, long_polling_timeout=5)
     except Exception as e:
