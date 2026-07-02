@@ -69,7 +69,7 @@ def get_numeric_inline_keyboard():
     markup.row(*row2)
     return markup
 
-# ================= REGEX FACEBOOK ZERO DASH FIX (THE MAGIC SOLUTION) =================
+# ================= REGEX FACEBOOK ZERO DASH FIX (THE UPDATED SMART SOLUTION) =================
 def fix_dash_url(url):
     if not url:
         return None
@@ -86,18 +86,22 @@ def fix_dash_url(url):
         base_url = url_fixed.split("?")[0]
         query = url_fixed.split("?")[1]
         
-        # استخراج المعطيات الأمنية الحساسة من الرابط الأصلي
+        # [تحديث ذكي]: استخراج nc_ohc سواء كان في الكويري السفلي أو معلقاً في الـ Path العلوي كمجلد
+        ohc_match = re.search(r"_nc_ohc=([A-Za-z0-9_\-]+)", query)
+        if not ohc_match or not ohc_match.group(1):
+            # إذا لم يجده بالأسفل أو وجده فارغاً، يبحث عنه في المسار العلوي المقترن بـ فلاشة ناقص (_) أو خط (-)
+            ohc_match = re.search(r"_nc_ohc[-_]([A-Za-z0-9_\-]+)", url)
+            
         oe_match = re.search(r"oe=([A-Za-z0-9]+)", query)
         oh_match = re.search(r"oh=([A-Za-z0-9_]+)", query)
         eui2_match = re.search(r"_nc_eui2=([A-Za-z0-9_\-]+)", query)
-        ohc_match = re.search(r"_nc_ohc=([A-Za-z0-9_\-]+)", query)
         
         oe = oe_match.group(1) if oe_match else ""
         oh = oh_match.group(1) if oh_match else ""
         eui2 = eui2_match.group(1) if eui2_match else ""
         ohc = ohc_match.group(1) if ohc_match else ""
         
-        # إعادة بناء الرابط بالصيغة التامة المطابقة للرابط الشغال
+        # إعادة بناء الرابط بالصيغة التامة المطابقة للرابط الشغال ومنع التضارب
         url_fixed = (
             f"{base_url}?_nc_ad=z-m&_nc_cid=1736"
             f"&_nc_eui2={eui2}&_nc_zt=28&aaf=1&ccb=2-4"
@@ -266,7 +270,7 @@ def execute_multi_stream(chat_id, count):
                 started_total += 1
                 time.sleep(0.5)
                 
-    bot.send_message(chat_id, f"✅ جاري إطلاق {started_total} بث متعدد متوازي بنجاح.", reply_markup=get_main_keyboard())
+    bot.send_message(chat_id, f"✅ jari itlaq {started_total} stream mutawazi بنجاح.", reply_markup=get_main_keyboard())
     if chat_id in user_waiting_count:
         del user_waiting_count[chat_id]
 
@@ -274,7 +278,7 @@ def execute_multi_stream(chat_id, count):
 
 @bot.message_handler(commands=["start"])
 def send_welcome(msg):
-    bot.send_message(msg.chat.id, "🎬 أهلاً بك في لوحة تحكم BeOut المحدثة. تم تفعيل أزرار التحكم السريعة بأسفل الشاشة.", reply_markup=get_main_keyboard())
+    bot.send_message(msg.chat.id, "🎬 أهلاً بك في لوحة تحكم ZenGo المحدثة بالكامل وإصلاح ثغرة التوكنات الفارغة.", reply_markup=get_main_keyboard())
 
 @bot.message_handler(commands=["addpage"])
 def add_page(msg):
@@ -379,7 +383,6 @@ def test_all_dash(msg):
         return
     
     report = "🧪 فحص روابط DASH للبثوث النشطة:\n\n"
-    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
@@ -422,19 +425,11 @@ def test_m3u8_channels(msg):
     
     status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة...")
     report = "🧪 تقرير فحص القنوات المحفوظة:\n\n"
-    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
     }
     
     for name, url in channels.items():
-        if ".m3u8" in url.lower():
-            link_type = "M3U8"
-        elif ".mpd" in url.lower():
-            link_type = "MPD"
-        else:
-            link_type = "URL"
-            
         try:
             res = requests.get(url, headers=headers, timeout=5, allow_redirects=True, stream=True)
             if res.status_code >= 200 and res.status_code < 400:
@@ -445,7 +440,9 @@ def test_m3u8_channels(msg):
         except:
             status_emoji = "🔴 غير مستجيب ❌"
             
-        bot.edit_message_text(report, chat_id=msg.chat.id, message_id=status_msg.message_id, reply_markup=get_main_keyboard())
+        report += f"- {name}: {status_emoji}\n"
+        
+    bot.edit_message_text(report, chat_id=msg.chat.id, message_id=status_msg.message_id, reply_markup=get_main_keyboard())
 
 # ================= TXT IMPORT =================
 @bot.message_handler(content_types=["document"])
@@ -617,7 +614,7 @@ def process_text_or_count(msg):
 # ================= KEEP-ALIVE SERVER =================
 class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_call(200)
+        self.send_response(200)
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b"Bot is active and running!")
@@ -630,7 +627,7 @@ def run_dummy_server():
 # ================= RUN =================
 if __name__ == "__main__":
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    print("🎬 Bot BeOut is running with accurate Facebook Zero configuration...")
+    print("🎬 Bot is running with updated regex fix...")
     try:
         bot.infinity_polling(timeout=10, long_polling_timeout=5)
     except Exception as e:
