@@ -6,7 +6,7 @@ import threading
 import json
 import os
 import re
-import xml.etree.ElementTree as ET  # مكتبة تحليل الـ XML لمعالجة الـ MPD
+import xml.etree.ElementTree as ET
 
 # ================= CONFIG =================
 BOT_TOKEN = "8973105242:AAGqK-Wr5cyYVDPOD26699QRUj8guauJqiA"
@@ -14,10 +14,22 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 DATA_FILE = "data.json"
 
-# الترويسات الأمنية لتفادي حظر فيسبوك (HTTP 403 Forbidden)
+# ================= THE INJECTED HEADERS (AB-CHAKIR) =================
+# تم تحويل الـ HashMap المخصص لك من Sketchware وجافا إلى قاموس بايثون وحقنه هنا
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10; AB-CHAKIR dev/AB-CHAKIR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/88.0.4324.93 Mobile Safari/537.36 [FBAN/EMA;FBLC/ar_AR;FBAV/368.0.0.5.95;FBDM/DisplayMetrics{density=2.0, width=720, height=1352, scaledDensity=2.0, xdpi=294.967, ydpi=294.967, densityDpi=320, noncompatWidthPixels=720, noncompatHeightPixels=1352, noncompatDensity=2.0, noncompatDensityDpi=320, noncompatXdpi=294.967, noncompatYdpi=294.967}]",
+    "Upgrade-Insecure-Requests": "1",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1"
 }
+
+# دالة لتحويل ترويسات بايثون إلى نص لكي يفهمها محرك FFmpeg أثناء البث
+def get_ffmpeg_headers_string():
+    return "".join(f"{k}: {v}\r\n" for k, v in HEADERS.items())
 
 # ================= STORAGE & JSON MECHANISM =================
 def load_data():
@@ -47,8 +59,6 @@ active_page = {}
 user_streams = {}
 
 # ================= HELPER FUNCTIONS =================
-
-# تنظيف الرابط من بروكسي BeOut لكي يتمكن سيرفر البوت من فحصه مباشرة
 def get_clean_url(url):
     if not url:
         return url
@@ -56,26 +66,17 @@ def get_clean_url(url):
 
 # ================= MPD DEEP PARSER ENGINE =================
 def analyze_mpd(mpd_url):
-    """
-    يقوم هذا التابع بالاتصال برابط الـ MPD الأصلي، وتحليل الـ XML الخاص به،
-    واستخراج كافة تفاصيل الجودة ومعدلات البت (Bitrates) ومسارات الصوت بدقة.
-    """
     if not mpd_url:
         return "⚠️ لا يتوفر رابط MPD صالح للتحليل."
         
     try:
-        # جلب ملف الـ XML الخاص بالـ MPD باستخدام الهيدرز الآمنة
         r = requests.get(mpd_url, headers=HEADERS, timeout=10)
         if r.status_code != 200:
             return f"⚠️ تعذر جلب الـ MPD من السيرفر (HTTP {r.status_code})"
             
-        # تحليل محتوى الـ XML
         root = ET.fromstring(r.content)
-        
-        # استخراج النطاق (Namespace) إذا كان موجوداً لتجنب فشل البحث
         ns = {'mpd': root.tag.split('}')[0].strip('{')} if '}' in root.tag else {}
         
-        # العثور على مجموعات التكيف (Adaptation Sets)
         adaptation_sets = root.findall('.//mpd:AdaptationSet', ns) if ns else root.findall('.//AdaptationSet')
         
         video_reps = []
@@ -86,18 +87,15 @@ def analyze_mpd(mpd_url):
             reps = ad_set.findall('mpd:Representation', ns) if ns else ad_set.findall('Representation')
             
             for rep in reps:
-                bandwidth = int(rep.attrib.get('bandwidth', 0)) / 1000  # تحويل إلى Kbps
+                bandwidth = int(rep.attrib.get('bandwidth', 0)) / 1000
                 
-                # تصنيف جودات الفيديو
                 if 'video' in mime_type or rep.attrib.get('width') is not None:
                     width = rep.attrib.get('width', 'N/A')
                     height = rep.attrib.get('height', 'N/A')
                     video_reps.append(f"  📺 `{width}x{height}` 🟢 بمعدل بت: `{bandwidth:.1f} Kbps`")
-                # تصنيف مسارات الصوت
                 elif 'audio' in mime_type:
                     audio_reps.append(f"  🎵 مسار صوتي 🟢 بمعدل بت: `{bandwidth:.1f} Kbps`")
                     
-        # تنسيق التقرير النهائي للمستخدم
         report = "📊 **تفاصيل بنية البث الداخلي لفيسبوك:**\n"
         if video_reps:
             report += "\n🔹 **الجودات المتوفرة للفيديو:**\n" + "\n".join(video_reps) + "\n"
@@ -114,7 +112,6 @@ def fix_dash_url(url):
     if not url:
         return None
     
-    # البحث عن النمط الذي يحتوي على video أو scontent وينتهي بـ .fbcdn.net
     match = re.search(r"https://([^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net)/", url)
     if match:
         domain = match.group(1)
@@ -123,7 +120,6 @@ def fix_dash_url(url):
         else:
             replacement = "https://BeOut@scontent.xx.fbcdn.net/"
         
-        # استبدال الجزء الأول بالكامل مع الحفاظ على بقية معاملات الرابط
         return re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", replacement, url)
     return url
 
@@ -144,7 +140,7 @@ def get_new_stream(chat_id):
                 "title": "Live Preview",
                 "description": "Preview stream"
             },
-            headers=HEADERS,
+            headers=HEADERS, # الترويسات المحقونة
             timeout=10
         ).json()
 
@@ -158,7 +154,7 @@ def get_new_stream(chat_id):
                 "access_token": page["token"],
                 "fields": "stream_url,dash_preview_url"
             },
-            headers=HEADERS,
+            headers=HEADERS, # الترويسات المحقونة
             timeout=10
         ).json()
 
@@ -167,10 +163,14 @@ def get_new_stream(chat_id):
     except:
         return None, None, None, None
 
-# ================= FFMPEG ENGINE =================
+# ================= FFMPEG ENGINE WITH HEADER INJECTION =================
 def launch_ffmpeg(source, stream_url):
+    # تحويل الترويسات المخصصة بالكامل لكي يستعملها FFmpeg أثناء سحب البث
+    ffmpeg_headers = get_ffmpeg_headers_string()
+    
     return subprocess.Popen([
         "ffmpeg", "-re",
+        "-headers", ffmpeg_headers, # حقن الترويسات كاملة داخل محرك البث!
         "-i", source,
         "-c:v", "copy",
         "-c:a", "aac",
@@ -185,7 +185,6 @@ def stream_thread(chat_id, source, name):
         bot.send_message(chat_id, "❌ فشل إنشاء البث.")
         return
 
-    # حفظ الرابط المعدل والمصفي
     dash_fixed = fix_dash_url(raw_dash)
 
     user_streams.setdefault(chat_id, {})[name] = {
@@ -195,7 +194,7 @@ def stream_thread(chat_id, source, name):
         "active": True,
         "source": source,
         "dash_url": dash_fixed,
-        "raw_dash_url": raw_dash  # حفظ الرابط الخام لاستخدامه في التحليل والفحص اللاحق
+        "raw_dash_url": raw_dash
     }
 
     def send_dash_later():
@@ -204,7 +203,7 @@ def stream_thread(chat_id, source, name):
             info = requests.get(
                 f"https://graph.facebook.com/v17.0/{live_id}",
                 params={"access_token": token, "fields": "dash_preview_url"},
-                headers=HEADERS,
+                headers=HEADERS, # الترويسات المحقونة
                 timeout=10
             ).json()
             
@@ -216,10 +215,8 @@ def stream_thread(chat_id, source, name):
                     user_streams[chat_id][name]["dash_url"] = fresh_fixed  
                     user_streams[chat_id][name]["raw_dash_url"] = fresh_raw
                 
-                # تحليل الـ MPD في الخلفية وإخراج النتيجة
                 mpd_analysis = analyze_mpd(fresh_raw)
                 
-                # الرسالة التوضيحية المتكاملة والمنظمة بشكل فائق
                 message = (
                     f"🎥 **البث نشط الآن للقناة: {name}**\n\n"
                     f"👁️ **رابط الـ DASH المعدل للتشغيل:**\n"
@@ -265,7 +262,7 @@ def stop_stream(chat_id, name):
         requests.delete(
             f"https://graph.facebook.com/v17.0/{info['live_id']}",
             params={"access_token": info["token"]},
-            headers=HEADERS,
+            headers=HEADERS, # الترويسات المحقونة
             timeout=10
         )
     except:
@@ -358,7 +355,7 @@ def check_tokens(msg):
             r = requests.get(
                 f"https://graph.facebook.com/v17.0/{info['page_id']}",
                 params={"access_token": info["token"], "fields": "name"},
-                headers=HEADERS,
+                headers=HEADERS, # الترويسات المحقونة
                 timeout=10
             )
             if r.status_code == 200:
@@ -382,7 +379,6 @@ def test_all_dash(msg):
     report = "🧪 **فحص روابط DASH للبثوث النشطة:**\n\n"
     
     for name, info in streams.items():
-        # استخدام الرابط الأصلي الخام (بدون BeOut) للتجربة من السيرفر بنجاح وبأمان
         raw_dash_url = info.get("raw_dash_url")
         
         if not raw_dash_url:
@@ -390,10 +386,8 @@ def test_all_dash(msg):
             continue
             
         try:
-            # الفحص مع ترويسة هامة لمنع حظر خادم فيسبوك
-            res = requests.get(raw_dash_url, headers=HEADERS, timeout=10)
+            res = requests.get(raw_dash_url, headers=HEADERS, timeout=10) # الترويسات المحقونة
             if res.status_code == 200:
-                # محاولة التحليل السريعة لمعرفة الجودة أثناء الفحص
                 report += f"✅ **{name}**: شغال بنجاح وجاهز للبث.\n"
             else:
                 report += f"❌ **{name}**: لا يعمل (خطأ فيسبوك: {res.status_code}).\n"
@@ -410,7 +404,7 @@ def test_m3u8_channels(msg):
         bot.send_message(msg.chat.id, "❌ قائمة القنوات فارغة..")
         return
     
-    status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة باستخدام الترويسات الآمنة...")
+    status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة باستخدام الترويسات المخصصة...")
     report = "🧪 تقرير فحص القنوات المحفوظة:\n"
     
     for name, url in channels.items():
@@ -422,8 +416,7 @@ def test_m3u8_channels(msg):
             link_type = "URL"
             
         try:
-            # تم دمج HEADERS هنا لضمان عدم الحظر من مزودي الـ IPTV
-            res = requests.head(url, headers=HEADERS, timeout=5, allow_redirects=True)
+            res = requests.head(url, headers=HEADERS, timeout=5, allow_redirects=True) # الترويسات المحقونة
             if res.status_code >= 200 and res.status_code < 400:
                 status = "شغال ✅"
             else:
@@ -497,5 +490,5 @@ def start_by_name(msg):
         bot.send_message(msg.chat.id, "❌ لم يتم العثور على اسم قناة مطابق.")
 
 # ================= RUN =================
-print("🎬 Bot BeOut is running ...")
+print("🎬 Bot BeOut is running with AB-CHAKIR headers configuration ...")
 bot.polling(non_stop=True)
