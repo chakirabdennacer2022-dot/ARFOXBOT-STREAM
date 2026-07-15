@@ -14,9 +14,10 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 DATA_FILE = "data.json"
 
-# ================= THE UNIFIED AB-CHAKIR FREE HEADERS =================
-# الترويسات الخاصة بك لتطبيق فيسبوك لايت بالوضع المجاني (مطبقة على كل الاتصالات)
-HEADERS = {
+# ================= THE UNIFIED AB-CHAKIR HEADERS =================
+
+# 1. ترويسات الوضع المجاني (تُستخدم حصرياً مع نطاقات z-m-...)
+FREE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 10; AB-CHAKIR dev/AB-CHAKIR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/88.0.4324.93 Mobile Safari/537.36 [FBAN/EMA;FBLC/ar_AR;FBAV/368.0.0.5.95;FBDM/DisplayMetrics{density=2.0, width=720, height=1352, scaledDensity=2.0, xdpi=294.967, ydpi=294.967, densityDpi=320, noncompatWidthPixels=720, noncompatHeightPixels=1352, noncompatDensity=2.0, noncompatDensityDpi=320, noncompatXdpi=294.967, noncompatYdpi=294.967}]",
     "Upgrade-Insecure-Requests": "1",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
@@ -27,9 +28,16 @@ HEADERS = {
     "Sec-Fetch-User": "?1"
 }
 
+# 2. الترويسات النظيفة للسيرفر العادي (لتجنب كشف البوت وحظر الطلب)
+CLEAN_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9"
+}
+
 # دالة لتحويل ترويساتك لتمريرها لمحرك FFmpeg أثناء سحب/دفع البيانات
 def get_ffmpeg_headers_string():
-    return "".join(f"{k}: {v}\r\n" for k, v in HEADERS.items())
+    return "".join(f"{k}: {v}\r\n" for k, v in FREE_HEADERS.items())
 
 # ================= STORAGE & JSON MECHANISM =================
 def load_data():
@@ -71,7 +79,7 @@ def analyze_mpd(mpd_url):
         
     try:
         # الاتصال بالـ CDN المجاني لسحب الـ XML مع ترويساتك بالكامل
-        r = requests.get(mpd_url, headers=HEADERS, timeout=10)
+        r = requests.get(mpd_url, headers=FREE_HEADERS, timeout=10)
         if r.status_code != 200:
             return f"⚠️ تعذر جلب الـ MPD من السيرفر المجاني (HTTP {r.status_code})"
             
@@ -127,35 +135,35 @@ def get_new_stream(chat_id):
     page = user_pages[chat_id][page_name]
     res_json = {}
 
-    # الخطوة 1: محاولة إنشاء البث عبر سيرفر الوضع المجاني وتمرير المعاملات كـ Form Data لمنع الـ Unknown Error
+    # الخطوة 1: محاولة إنشاء البث عبر سيرفر الوضع المجاني مع ترويسات الموبايل المجانية
     try:
         r = requests.post(
-            f"https://z-m-graph.facebook.com/v17.0/{page['page_id']}/live_videos",
+            f"https://z-m-graph.facebook.com/v19.0/{page['page_id']}/live_videos",
             data={
                 "access_token": page["token"],
                 "status": "UNPUBLISHED",
                 "title": "Live Preview",
                 "description": "Preview stream"
             },
-            headers=HEADERS,
+            headers=FREE_HEADERS,
             timeout=10
         )
         res_json = r.json()
     except Exception as e:
         res_json = {"error": {"message": str(e)}}
 
-    # الخطوة 2: إذا رفض السيرفر المجاني بسبب حظر جدار الحماية للـ VPS، نقوم بالتحويل التلقائي والآمن للطرف العادي
+    # الخطوة 2: إذا فشل، نقوم بالتحويل الفوري للسيرفر العادي مع تنظيف الترويسات تماماً لمنع خطأ Unknown Error
     if "id" not in res_json:
         try:
             r = requests.post(
-                f"https://graph.facebook.com/v17.0/{page['page_id']}/live_videos",
+                f"https://graph.facebook.com/v19.0/{page['page_id']}/live_videos",
                 data={
                     "access_token": page["token"],
                     "status": "UNPUBLISHED",
                     "title": "Live Preview",
                     "description": "Preview stream"
                 },
-                headers=HEADERS,
+                headers=CLEAN_HEADERS,  # استخدام الترويسات النظيفة هنا لحل المشكلة
                 timeout=10
             )
             res_json = r.json()
@@ -172,30 +180,30 @@ def get_new_stream(chat_id):
     live_id = res_json["id"]
     info = {}
 
-    # الخطوة 3: محاولة جلب روابط البث والـ MPD من خادم التصفح المجاني
+    # الخطوة 3: جلب روابط البث
     try:
         info_res = requests.get(
-            f"https://z-m-graph.facebook.com/v17.0/{live_id}",
+            f"https://z-m-graph.facebook.com/v19.0/{live_id}",
             params={
                 "access_token": page["token"],
                 "fields": "stream_url,dash_preview_url"
             },
-            headers=HEADERS,
+            headers=FREE_HEADERS,
             timeout=10
         )
         info = info_res.json()
         if "stream_url" not in info:
             raise Exception("z-m failed")
     except:
-        # جلب البيانات من السيرفر البديل عند حدوث أي قيود على الـ Subdomain
+        # جلب البيانات البديل باستخدام الترويسات النظيفة لمنع الحظر
         try:
             info_res = requests.get(
-                f"https://graph.facebook.com/v17.0/{live_id}",
+                f"https://graph.facebook.com/v19.0/{live_id}",
                 params={
                     "access_token": page["token"],
                     "fields": "stream_url,dash_preview_url"
                 },
-                headers=HEADERS,
+                headers=CLEAN_HEADERS,
                 timeout=10
             )
             info = info_res.json()
@@ -208,7 +216,7 @@ def get_new_stream(chat_id):
 
 # ================= FFMPEG ENGINE WITH HEADER INJECTION =================
 def launch_ffmpeg(source, stream_url):
-    # محاكاة الاتصال المجاني بالكامل من خلال إرسال ترويساتك داخل الـ stream الخاص بـ FFmpeg
+    # إرسال ترويسات الوضع المجاني داخل تيار البث للفيسبوك
     ffmpeg_headers = get_ffmpeg_headers_string()
     
     return subprocess.Popen([
@@ -243,12 +251,12 @@ def stream_thread(chat_id, source, name):
     def send_dash_later():
         time.sleep(20)
         try:
-            # محاولة جلب البيانات المحدثة من السيرفر المجاني أولاً
+            # محاولة جلب البيانات المحدثة
             try:
                 info = requests.get(
-                    f"https://z-m-graph.facebook.com/v17.0/{live_id}",
+                    f"https://z-m-graph.facebook.com/v19.0/{live_id}",
                     params={"access_token": token, "fields": "dash_preview_url"},
-                    headers=HEADERS,
+                    headers=FREE_HEADERS,
                     timeout=10
                 ).json()
                 fresh_raw = info.get("dash_preview_url")
@@ -256,9 +264,9 @@ def stream_thread(chat_id, source, name):
                     raise Exception("Try regular")
             except:
                 info = requests.get(
-                    f"https://graph.facebook.com/v17.0/{live_id}",
+                    f"https://graph.facebook.com/v19.0/{live_id}",
                     params={"access_token": token, "fields": "dash_preview_url"},
-                    headers=HEADERS,
+                    headers=CLEAN_HEADERS,
                     timeout=10
                 ).json()
                 fresh_raw = info.get("dash_preview_url")
@@ -316,19 +324,19 @@ def stop_stream(chat_id, name):
         if info.get("proc"):
             info["proc"].kill()
             
-        # محاولة حذف البث من الخادم المجاني وإلا فالعادي
+        # محاولة حذف البث من الخادم المجاني وإلا فالعادي (بترويسات نظيفة)
         try:
             requests.delete(
-                f"https://z-m-graph.facebook.com/v17.0/{info['live_id']}",
+                f"https://z-m-graph.facebook.com/v19.0/{info['live_id']}",
                 params={"access_token": info["token"]},
-                headers=HEADERS,
+                headers=FREE_HEADERS,
                 timeout=10
             )
         except:
             requests.delete(
-                f"https://graph.facebook.com/v17.0/{info['live_id']}",
+                f"https://graph.facebook.com/v19.0/{info['live_id']}",
                 params={"access_token": info["token"]},
-                headers=HEADERS,
+                headers=CLEAN_HEADERS,
                 timeout=10
             )
     except:
@@ -418,19 +426,19 @@ def check_tokens(msg):
     report = "📋 تقرير فحص التوكنات عبر السيرفر المجاني:\n"
     for name, info in pages.items():
         try:
-            # محاولة الفحص بالخوادم المجانية أولاً
+            # محاولة الفحص بالخوادم المجانية أولاً ثم العادية بترويسات نظيفة
             try:
                 r = requests.get(
-                    f"https://z-m-graph.facebook.com/v17.0/{info['page_id']}",
+                    f"https://z-m-graph.facebook.com/v19.0/{info['page_id']}",
                     params={"access_token": info["token"], "fields": "name"},
-                    headers=HEADERS,
+                    headers=FREE_HEADERS,
                     timeout=10
                 )
             except:
                 r = requests.get(
-                    f"https://graph.facebook.com/v17.0/{info['page_id']}",
+                    f"https://graph.facebook.com/v19.0/{info['page_id']}",
                     params={"access_token": info["token"], "fields": "name"},
-                    headers=HEADERS,
+                    headers=CLEAN_HEADERS,
                     timeout=10
                 )
             
@@ -462,8 +470,8 @@ def test_all_dash(msg):
             continue
             
         try:
-            # اختبار تحميل الرابط المجاني مباشرة بالترويسات لمحاكاة ExoPlayer
-            res = requests.get(dash_url, headers=HEADERS, timeout=10)
+            # اختبار تحميل الرابط المجاني بالترويسات الخاصة بالوضع المجاني لمحاكاة ExoPlayer
+            res = requests.get(dash_url, headers=FREE_HEADERS, timeout=10)
             if res.status_code == 200:
                 report += f"✅ **{name}**: شغال بنجاح وجاهز للتشغيل على ExoPlayer بدون رصيد.\n"
             else:
@@ -493,7 +501,8 @@ def test_m3u8_channels(msg):
             link_type = "URL"
             
         try:
-            res = requests.head(url, headers=HEADERS, timeout=5, allow_redirects=True)
+            # فحص القنوات باستخدام ترويسات مجانية
+            res = requests.head(url, headers=FREE_HEADERS, timeout=5, allow_redirects=True)
             if res.status_code >= 200 and res.status_code < 400:
                 status = "شغال ✅"
             else:
