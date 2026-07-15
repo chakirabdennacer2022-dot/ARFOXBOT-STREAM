@@ -14,9 +14,9 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 DATA_FILE = "data.json"
 
-# ================= 1. ترويسات الوضع المجاني (خاصة بروابط البث والـ MPD والـ FFmpeg) =================
-# تُستخدم لإيهام سيرفر الميديا فيسبوك CDN بأنك تتصفح مجاناً بدون رصيد
-AB_CHAKIR_FREE_HEADERS = {
+# ================= THE UNIFIED AB-CHAKIR FREE HEADERS =================
+# الترويسات الخاصة بك لتطبيق فيسبوك لايت بالوضع المجاني (مطبقة على كل الاتصالات)
+HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 10; AB-CHAKIR dev/AB-CHAKIR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/88.0.4324.93 Mobile Safari/537.36 [FBAN/EMA;FBLC/ar_AR;FBAV/368.0.0.5.95;FBDM/DisplayMetrics{density=2.0, width=720, height=1352, scaledDensity=2.0, xdpi=294.967, ydpi=294.967, densityDpi=320, noncompatWidthPixels=720, noncompatHeightPixels=1352, noncompatDensity=2.0, noncompatDensityDpi=320, noncompatXdpi=294.967, noncompatYdpi=294.967}]",
     "Upgrade-Insecure-Requests": "1",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
@@ -27,16 +27,9 @@ AB_CHAKIR_FREE_HEADERS = {
     "Sec-Fetch-User": "?1"
 }
 
-# ================= 2. ترويسات الآبيآي النظيفة (خاصة بإنشاء وإيقاف البث) =================
-# تُستخدم لمنع حظر خوادم الـ Graph API لفيسبوك وتجنب خطأ فشل الإنشاء
-GRAPH_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json"
-}
-
-# تحويل ترويسات الوضع المجاني إلى نص مخصص لمحرك FFmpeg
+# دالة لتحويل ترويساتك لتمريرها لمحرك FFmpeg أثناء سحب/دفع البيانات
 def get_ffmpeg_headers_string():
-    return "".join(f"{k}: {v}\r\n" for k, v in AB_CHAKIR_FREE_HEADERS.items())
+    return "".join(f"{k}: {v}\r\n" for k, v in HEADERS.items())
 
 # ================= STORAGE & JSON MECHANISM =================
 def load_data():
@@ -77,10 +70,10 @@ def analyze_mpd(mpd_url):
         return "⚠️ لا يتوفر رابط MPD صالح للتحليل."
         
     try:
-        # هنا نستخدم ترويسات الوضع المجاني لأننا نتصل بالـ CDN مباشرة لسحب الـ XML
-        r = requests.get(mpd_url, headers=AB_CHAKIR_FREE_HEADERS, timeout=10)
+        # الاتصال بالـ CDN المجاني لسحب الـ XML مع ترويساتك بالكامل
+        r = requests.get(mpd_url, headers=HEADERS, timeout=10)
         if r.status_code != 200:
-            return f"⚠️ تعذر جلب الـ MPD من السيرفر (HTTP {r.status_code})"
+            return f"⚠️ تعذر جلب الـ MPD من السيرفر المجاني (HTTP {r.status_code})"
             
         root = ET.fromstring(r.content)
         ns = {'mpd': root.tag.split('}')[0].strip('{')} if '}' in root.tag else {}
@@ -115,23 +108,16 @@ def analyze_mpd(mpd_url):
     except Exception as e:
         return f"⚠️ خطأ أثناء تحليل ملف الـ MPD برمجياً: `{str(e)}`"
 
-# ================= REGEX DASH FIX =================
+# ================= REGEX DASH TO FREE-MODE CDN FIX =================
 def fix_dash_url(url):
     if not url:
         return None
     
-    match = re.search(r"https://([^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net)/", url)
-    if match:
-        domain = match.group(1)
-        if "video" in domain:
-            replacement = "https://BeOut@video.xx.fbcdn.net/"
-        else:
-            replacement = "https://BeOut@scontent.xx.fbcdn.net/"
-        
-        return re.sub(r"https://[^/]*?(?:video|scontent)[^/]*?\.fbcdn\.net/", replacement, url)
-    return url
+    # استبدال أي نطاق ميديا (video, scontent, الخ) بالنطاق المجاني z-m-scontent.xx.fbcdn.net ليعمل بدون رصيد
+    fixed_url = re.sub(r"https://[^/]*?\.fbcdn\.net", "https://z-m-scontent.xx.fbcdn.net", url)
+    return fixed_url
 
-# ================= FACEBOOK GRAPH API =================
+# ================= FACEBOOK GRAPH API (FREE SUBDOMAIN) =================
 def get_new_stream(chat_id):
     page_name = active_page.get(chat_id)
     if not page_name:
@@ -141,36 +127,36 @@ def get_new_stream(chat_id):
     page = user_pages[chat_id][page_name]
 
     try:
-        # نستخدم GRAPH_HEADERS هنا لضمان قبول الطلب لإنشاء البث المباشر
+        # تم تعديل الرابط لنطاق التصفح المجاني z-m-graph مع حقن ترويساتك بالكامل
         r = requests.post(
-            f"https://graph.facebook.com/v17.0/{page['page_id']}/live_videos",
+            f"https://z-m-graph.facebook.com/v17.0/{page['page_id']}/live_videos",
             params={
                 "access_token": page["token"],
                 "status": "UNPUBLISHED",
                 "title": "Live Preview",
                 "description": "Preview stream"
             },
-            headers=GRAPH_HEADERS,
+            headers=HEADERS,
             timeout=10
         )
         
         res_json = r.json()
         
-        # إذا فشل فيسبوك في إرجاع المعرف، نطبع السبب الحقيقي لتسهيل تتبع المشكلة
         if "id" not in res_json:
-            error_msg = res_json.get("error", {}).get("message", "خطأ غير معروف في السيرفر")
-            bot.send_message(chat_id, f"❌ **فشل إنشاء البث من فيسبوك:**\n`{error_msg}`", parse_mode="Markdown")
+            error_msg = res_json.get("error", {}).get("message", "خطأ غير معروف في السيرفر المجاني")
+            bot.send_message(chat_id, f"❌ **فشل إنشاء البث من السيرفر المجاني:**\n`{error_msg}`", parse_mode="Markdown")
             return None, None, None, None
 
         live_id = res_json["id"]
         
+        # جلب البيانات من نطاق z-m-graph وبترويساتك المجانية أيضاً
         info_res = requests.get(
-            f"https://graph.facebook.com/v17.0/{live_id}",
+            f"https://z-m-graph.facebook.com/v17.0/{live_id}",
             params={
                 "access_token": page["token"],
                 "fields": "stream_url,dash_preview_url"
             },
-            headers=GRAPH_HEADERS,
+            headers=HEADERS,
             timeout=10
         )
         
@@ -179,17 +165,17 @@ def get_new_stream(chat_id):
         return info.get("stream_url"), live_id, raw_dash, page["token"]
         
     except Exception as e:
-        bot.send_message(chat_id, f"❌ **حدث خطأ برمجي في الاتصال:**\n`{str(e)}`", parse_mode="Markdown")
+        bot.send_message(chat_id, f"❌ **حدث خطأ في الاتصال بالشبكة المجانية:**\n`{str(e)}`", parse_mode="Markdown")
         return None, None, None, None
 
 # ================= FFMPEG ENGINE WITH HEADER INJECTION =================
 def launch_ffmpeg(source, stream_url):
-    # إدخال ترويسات الوضع المجاني AB-CHAKIR أثناء سحب البث من السيرفر المصدر
+    # محاكاة الاتصال المجاني بالكامل من خلال إرسال ترويساتك داخل الـ stream الخاص بـ FFmpeg
     ffmpeg_headers = get_ffmpeg_headers_string()
     
     return subprocess.Popen([
         "ffmpeg", "-re",
-        "-headers", ffmpeg_headers, # تطبيق الخدعة التام هنا في محرك البث!
+        "-headers", ffmpeg_headers,
         "-i", source,
         "-c:v", "copy",
         "-c:a", "aac",
@@ -201,9 +187,9 @@ def launch_ffmpeg(source, stream_url):
 def stream_thread(chat_id, source, name):
     stream_url, live_id, raw_dash, token = get_new_stream(chat_id)
     if not stream_url:
-        # تمت معالجة رسائل الخطأ التفصيلية بالداخل، لذا نكتفي بالإيقاف هنا
         return
 
+    # استخراج الـ MPD الأصلي المحول لنطاق الوضع المجاني z-m-scontent
     dash_fixed = fix_dash_url(raw_dash)
 
     user_streams.setdefault(chat_id, {})[name] = {
@@ -219,10 +205,11 @@ def stream_thread(chat_id, source, name):
     def send_dash_later():
         time.sleep(20)
         try:
+            # جلب الـ MPD المحدث دورياً من السيرفر المجاني وبترويسات فيسبوك لايت
             info = requests.get(
-                f"https://graph.facebook.com/v17.0/{live_id}",
+                f"https://z-m-graph.facebook.com/v17.0/{live_id}",
                 params={"access_token": token, "fields": "dash_preview_url"},
-                headers=GRAPH_HEADERS, # استخدام ترويسات الـ API الآمنة لجلب البيانات المحدثة
+                headers=HEADERS,
                 timeout=10
             ).json()
             
@@ -234,12 +221,12 @@ def stream_thread(chat_id, source, name):
                     user_streams[chat_id][name]["dash_url"] = fresh_fixed  
                     user_streams[chat_id][name]["raw_dash_url"] = fresh_raw
                 
-                # استخدام ترويسات الوضع المجاني لقراءة وتحليل محتوى الـ MPD
+                # جلب ملف الـ XML وفحصه مجاناً بالترويسات الخاصة بك
                 mpd_analysis = analyze_mpd(fresh_raw)
                 
                 message = (
                     f"🎥 **البث نشط الآن للقناة: {name}**\n\n"
-                    f"👁️ **رابط الـ DASH المعدل للتشغيل:**\n"
+                    f"👁️ **رابط الـ DASH للتشغيل على ExoPlayer بدون رصيد:**\n"
                     f"`{fresh_fixed}`\n\n"
                     f"{mpd_analysis}"
                 )
@@ -279,10 +266,11 @@ def stop_stream(chat_id, name):
     try:
         if info.get("proc"):
             info["proc"].kill()
+        # إيقاف وحذف البث من خلال السيرفر المجاني وبترويسات فيسبوك لايت
         requests.delete(
-            f"https://graph.facebook.com/v17.0/{info['live_id']}",
+            f"https://z-m-graph.facebook.com/v17.0/{info['live_id']}",
             params={"access_token": info["token"]},
-            headers=GRAPH_HEADERS, # استخدام ترويسات الـ API للتواصل الآمن مع الحذف
+            headers=HEADERS,
             timeout=10
         )
     except:
@@ -369,19 +357,20 @@ def check_tokens(msg):
         bot.send_message(msg.chat.id, "❌ لا توجد صفحات مسجلة لفحصها.")
         return
     
-    report = "📋 تقرير فحص التوكنات:\n"
+    report = "📋 تقرير فحص التوكنات عبر السيرفر المجاني:\n"
     for name, info in pages.items():
         try:
+            # الفحص من خلال خوادم z-m-graph بالترويسات الكاملة
             r = requests.get(
-                f"https://graph.facebook.com/v17.0/{info['page_id']}",
+                f"https://z-m-graph.facebook.com/v17.0/{info['page_id']}",
                 params={"access_token": info["token"], "fields": "name"},
-                headers=GRAPH_HEADERS, # استخدام ترويسات الـ API لمنع الحظر
+                headers=HEADERS,
                 timeout=10
             )
             if r.status_code == 200:
-                report += f"✅ {name}: هذا التوكن شغال\n"
+                report += f"✅ {name}: هذا التوكن شغال ومصرح\n"
             else:
-                report += f"❌ {name}: هذا التوكن غير صالح\n"
+                report += f"❌ {name}: هذا التوكن غير صالح أو محظور مجانياً\n"
         except:
             report += f"❌ {name}: هذا التوكن غير صالح\n"
             
@@ -396,22 +385,22 @@ def test_all_dash(msg):
         bot.send_message(msg.chat.id, "❌ لا توجد قنوات تبث حالياً لفحصها.")
         return
     
-    report = "🧪 **فحص روابط DASH للبثوث النشطة بالوضع المجاني:**\n\n"
+    report = "🧪 **فحص روابط DASH للبثوث النشطة بالوضع المجاني (z-m-scontent):**\n\n"
     
     for name, info in streams.items():
-        raw_dash_url = info.get("raw_dash_url")
+        dash_url = info.get("dash_url") # الرابط المجاني المعدل
         
-        if not raw_dash_url:
-            report += f"⚪️ **{name}**: لا يوجد رابط DASH مسجل لهذا البث.\n"
+        if not dash_url:
+            report += f"⚪️ **{name}**: لا يوجد رابط DASH مجاني مسجل لهذا البث.\n"
             continue
             
         try:
-            # هنا نستخدم ترويسات الوضع المجاني لفحص الرابط ومحاكاته كجهاز مستخدم بدون رصيد
-            res = requests.get(raw_dash_url, headers=AB_CHAKIR_FREE_HEADERS, timeout=10)
+            # اختبار تحميل الرابط المجاني مباشرة بالترويسات لمحاكاة ExoPlayer
+            res = requests.get(dash_url, headers=HEADERS, timeout=10)
             if res.status_code == 200:
-                report += f"✅ **{name}**: شغال بنجاح وجاهز للبث بالوضع المجاني.\n"
+                report += f"✅ **{name}**: شغال بنجاح وجاهز للتشغيل على ExoPlayer بدون رصيد.\n"
             else:
-                report += f"❌ **{name}**: لا يعمل (خطأ فيسبوك: {res.status_code}).\n"
+                report += f"❌ **{name}**: لا يعمل على النطاق المجاني (HTTP {res.status_code}).\n"
         except:
             report += f"❌ **{name}**: متعطل أو منقطع الاتصال.\n"
             
@@ -425,7 +414,7 @@ def test_m3u8_channels(msg):
         bot.send_message(msg.chat.id, "❌ قائمة القنوات فارغة..")
         return
     
-    status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة بالترويسات المخصصة...")
+    status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة بالترويسات المخصصة للوضع المجاني...")
     report = "🧪 تقرير فحص القنوات المحفوظة:\n"
     
     for name, url in channels.items():
@@ -437,8 +426,8 @@ def test_m3u8_channels(msg):
             link_type = "URL"
             
         try:
-            # نستخدم ترويسات AB-CHAKIR هنا لتفادي أي حظر أثناء فحص روابط الـ IPTV
-            res = requests.head(url, headers=AB_CHAKIR_FREE_HEADERS, timeout=5, allow_redirects=True)
+            # فحص الروابط بالترويسات المجانية لضمان الدقة
+            res = requests.head(url, headers=HEADERS, timeout=5, allow_redirects=True)
             if res.status_code >= 200 and res.status_code < 400:
                 status = "شغال ✅"
             else:
@@ -512,5 +501,5 @@ def start_by_name(msg):
         bot.send_message(msg.chat.id, "❌ لم يتم العثور على اسم قناة مطابق.")
 
 # ================= RUN =================
-print("🎬 Bot BeOut is running with AB-CHAKIR Safe Split-Headers configuration ...")
+print("🎬 Bot BeOut is running on Facebook Lite Free-Mode Subdomains ...")
 bot.polling(non_stop=True)
