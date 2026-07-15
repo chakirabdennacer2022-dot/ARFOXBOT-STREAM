@@ -14,9 +14,9 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 DATA_FILE = "data.json"
 
-# ================= THE INJECTED HEADERS (AB-CHAKIR) =================
-# تم تحويل الـ HashMap المخصص لك من Sketchware وجافا إلى قاموس بايثون وحقنه هنا
-HEADERS = {
+# ================= 1. ترويسات الوضع المجاني (خاصة بروابط البث والـ MPD والـ FFmpeg) =================
+# تُستخدم لإيهام سيرفر الميديا فيسبوك CDN بأنك تتصفح مجاناً بدون رصيد
+AB_CHAKIR_FREE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Linux; Android 10; AB-CHAKIR dev/AB-CHAKIR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/88.0.4324.93 Mobile Safari/537.36 [FBAN/EMA;FBLC/ar_AR;FBAV/368.0.0.5.95;FBDM/DisplayMetrics{density=2.0, width=720, height=1352, scaledDensity=2.0, xdpi=294.967, ydpi=294.967, densityDpi=320, noncompatWidthPixels=720, noncompatHeightPixels=1352, noncompatDensity=2.0, noncompatDensityDpi=320, noncompatXdpi=294.967, noncompatYdpi=294.967}]",
     "Upgrade-Insecure-Requests": "1",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
@@ -27,9 +27,16 @@ HEADERS = {
     "Sec-Fetch-User": "?1"
 }
 
-# دالة لتحويل ترويسات بايثون إلى نص لكي يفهمها محرك FFmpeg أثناء البث
+# ================= 2. ترويسات الآبيآي النظيفة (خاصة بإنشاء وإيقاف البث) =================
+# تُستخدم لمنع حظر خوادم الـ Graph API لفيسبوك وتجنب خطأ فشل الإنشاء
+GRAPH_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json"
+}
+
+# تحويل ترويسات الوضع المجاني إلى نص مخصص لمحرك FFmpeg
 def get_ffmpeg_headers_string():
-    return "".join(f"{k}: {v}\r\n" for k, v in HEADERS.items())
+    return "".join(f"{k}: {v}\r\n" for k, v in AB_CHAKIR_FREE_HEADERS.items())
 
 # ================= STORAGE & JSON MECHANISM =================
 def load_data():
@@ -70,7 +77,8 @@ def analyze_mpd(mpd_url):
         return "⚠️ لا يتوفر رابط MPD صالح للتحليل."
         
     try:
-        r = requests.get(mpd_url, headers=HEADERS, timeout=10)
+        # هنا نستخدم ترويسات الوضع المجاني لأننا نتصل بالـ CDN مباشرة لسحب الـ XML
+        r = requests.get(mpd_url, headers=AB_CHAKIR_FREE_HEADERS, timeout=10)
         if r.status_code != 200:
             return f"⚠️ تعذر جلب الـ MPD من السيرفر (HTTP {r.status_code})"
             
@@ -127,11 +135,13 @@ def fix_dash_url(url):
 def get_new_stream(chat_id):
     page_name = active_page.get(chat_id)
     if not page_name:
+        bot.send_message(chat_id, "⚠️ الرجاء اختيار صفحة نشطة أولاً عبر الأمر /usepage")
         return None, None, None, None
 
     page = user_pages[chat_id][page_name]
 
     try:
+        # نستخدم GRAPH_HEADERS هنا لضمان قبول الطلب لإنشاء البث المباشر
         r = requests.post(
             f"https://graph.facebook.com/v17.0/{page['page_id']}/live_videos",
             params={
@@ -140,37 +150,46 @@ def get_new_stream(chat_id):
                 "title": "Live Preview",
                 "description": "Preview stream"
             },
-            headers=HEADERS, # الترويسات المحقونة
+            headers=GRAPH_HEADERS,
             timeout=10
-        ).json()
-
-        if "id" not in r:
+        )
+        
+        res_json = r.json()
+        
+        # إذا فشل فيسبوك في إرجاع المعرف، نطبع السبب الحقيقي لتسهيل تتبع المشكلة
+        if "id" not in res_json:
+            error_msg = res_json.get("error", {}).get("message", "خطأ غير معروف في السيرفر")
+            bot.send_message(chat_id, f"❌ **فشل إنشاء البث من فيسبوك:**\n`{error_msg}`", parse_mode="Markdown")
             return None, None, None, None
 
-        live_id = r["id"]
-        info = requests.get(
+        live_id = res_json["id"]
+        
+        info_res = requests.get(
             f"https://graph.facebook.com/v17.0/{live_id}",
             params={
                 "access_token": page["token"],
                 "fields": "stream_url,dash_preview_url"
             },
-            headers=HEADERS, # الترويسات المحقونة
+            headers=GRAPH_HEADERS,
             timeout=10
-        ).json()
-
+        )
+        
+        info = info_res.json()
         raw_dash = info.get("dash_preview_url")
         return info.get("stream_url"), live_id, raw_dash, page["token"]
-    except:
+        
+    except Exception as e:
+        bot.send_message(chat_id, f"❌ **حدث خطأ برمجي في الاتصال:**\n`{str(e)}`", parse_mode="Markdown")
         return None, None, None, None
 
 # ================= FFMPEG ENGINE WITH HEADER INJECTION =================
 def launch_ffmpeg(source, stream_url):
-    # تحويل الترويسات المخصصة بالكامل لكي يستعملها FFmpeg أثناء سحب البث
+    # إدخال ترويسات الوضع المجاني AB-CHAKIR أثناء سحب البث من السيرفر المصدر
     ffmpeg_headers = get_ffmpeg_headers_string()
     
     return subprocess.Popen([
         "ffmpeg", "-re",
-        "-headers", ffmpeg_headers, # حقن الترويسات كاملة داخل محرك البث!
+        "-headers", ffmpeg_headers, # تطبيق الخدعة التام هنا في محرك البث!
         "-i", source,
         "-c:v", "copy",
         "-c:a", "aac",
@@ -182,7 +201,7 @@ def launch_ffmpeg(source, stream_url):
 def stream_thread(chat_id, source, name):
     stream_url, live_id, raw_dash, token = get_new_stream(chat_id)
     if not stream_url:
-        bot.send_message(chat_id, "❌ فشل إنشاء البث.")
+        # تمت معالجة رسائل الخطأ التفصيلية بالداخل، لذا نكتفي بالإيقاف هنا
         return
 
     dash_fixed = fix_dash_url(raw_dash)
@@ -203,7 +222,7 @@ def stream_thread(chat_id, source, name):
             info = requests.get(
                 f"https://graph.facebook.com/v17.0/{live_id}",
                 params={"access_token": token, "fields": "dash_preview_url"},
-                headers=HEADERS, # الترويسات المحقونة
+                headers=GRAPH_HEADERS, # استخدام ترويسات الـ API الآمنة لجلب البيانات المحدثة
                 timeout=10
             ).json()
             
@@ -215,6 +234,7 @@ def stream_thread(chat_id, source, name):
                     user_streams[chat_id][name]["dash_url"] = fresh_fixed  
                     user_streams[chat_id][name]["raw_dash_url"] = fresh_raw
                 
+                # استخدام ترويسات الوضع المجاني لقراءة وتحليل محتوى الـ MPD
                 mpd_analysis = analyze_mpd(fresh_raw)
                 
                 message = (
@@ -262,7 +282,7 @@ def stop_stream(chat_id, name):
         requests.delete(
             f"https://graph.facebook.com/v17.0/{info['live_id']}",
             params={"access_token": info["token"]},
-            headers=HEADERS, # الترويسات المحقونة
+            headers=GRAPH_HEADERS, # استخدام ترويسات الـ API للتواصل الآمن مع الحذف
             timeout=10
         )
     except:
@@ -355,7 +375,7 @@ def check_tokens(msg):
             r = requests.get(
                 f"https://graph.facebook.com/v17.0/{info['page_id']}",
                 params={"access_token": info["token"], "fields": "name"},
-                headers=HEADERS, # الترويسات المحقونة
+                headers=GRAPH_HEADERS, # استخدام ترويسات الـ API لمنع الحظر
                 timeout=10
             )
             if r.status_code == 200:
@@ -376,7 +396,7 @@ def test_all_dash(msg):
         bot.send_message(msg.chat.id, "❌ لا توجد قنوات تبث حالياً لفحصها.")
         return
     
-    report = "🧪 **فحص روابط DASH للبثوث النشطة:**\n\n"
+    report = "🧪 **فحص روابط DASH للبثوث النشطة بالوضع المجاني:**\n\n"
     
     for name, info in streams.items():
         raw_dash_url = info.get("raw_dash_url")
@@ -386,9 +406,10 @@ def test_all_dash(msg):
             continue
             
         try:
-            res = requests.get(raw_dash_url, headers=HEADERS, timeout=10) # الترويسات المحقونة
+            # هنا نستخدم ترويسات الوضع المجاني لفحص الرابط ومحاكاته كجهاز مستخدم بدون رصيد
+            res = requests.get(raw_dash_url, headers=AB_CHAKIR_FREE_HEADERS, timeout=10)
             if res.status_code == 200:
-                report += f"✅ **{name}**: شغال بنجاح وجاهز للبث.\n"
+                report += f"✅ **{name}**: شغال بنجاح وجاهز للبث بالوضع المجاني.\n"
             else:
                 report += f"❌ **{name}**: لا يعمل (خطأ فيسبوك: {res.status_code}).\n"
         except:
@@ -404,7 +425,7 @@ def test_m3u8_channels(msg):
         bot.send_message(msg.chat.id, "❌ قائمة القنوات فارغة..")
         return
     
-    status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة باستخدام الترويسات المخصصة...")
+    status_msg = bot.send_message(msg.chat.id, "⏳ جاري فحص الروابط المحفوظة بالترويسات المخصصة...")
     report = "🧪 تقرير فحص القنوات المحفوظة:\n"
     
     for name, url in channels.items():
@@ -416,7 +437,8 @@ def test_m3u8_channels(msg):
             link_type = "URL"
             
         try:
-            res = requests.head(url, headers=HEADERS, timeout=5, allow_redirects=True) # الترويسات المحقونة
+            # نستخدم ترويسات AB-CHAKIR هنا لتفادي أي حظر أثناء فحص روابط الـ IPTV
+            res = requests.head(url, headers=AB_CHAKIR_FREE_HEADERS, timeout=5, allow_redirects=True)
             if res.status_code >= 200 and res.status_code < 400:
                 status = "شغال ✅"
             else:
@@ -490,5 +512,5 @@ def start_by_name(msg):
         bot.send_message(msg.chat.id, "❌ لم يتم العثور على اسم قناة مطابق.")
 
 # ================= RUN =================
-print("🎬 Bot BeOut is running with AB-CHAKIR headers configuration ...")
+print("🎬 Bot BeOut is running with AB-CHAKIR Safe Split-Headers configuration ...")
 bot.polling(non_stop=True)
